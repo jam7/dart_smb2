@@ -102,10 +102,9 @@ class NtlmAuth {
     // Compute offsets
     final flags = type2.negotiateFlags & (_flagNtlm | _flagUnicode | _flagNtlm2 | _flagKeyExch | _flagAlwaysSign);
 
-    // Fixed header up to Payload: 88 bytes (including MIC placeholder)
-    const fixedLen = 72; // Without version and MIC
-    const versionLen = 8;
-    const headerLen = fixedLen + versionLen; // 80 bytes
+    // Fixed header: signature(8) + type(4) + 6 security buffers(48) +
+    // flags(4) + version(8) = 72 bytes
+    const headerLen = 72;
 
     int payloadOffset = headerLen;
     final lmOffset = payloadOffset;
