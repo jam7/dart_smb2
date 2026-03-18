@@ -13,7 +13,8 @@ import 'multiplexer.dart';
 class Smb2Sender {
   final Smb2Connection _connection;
   final Smb2Multiplexer _multiplexer;
-  Completer<void>? _sendLock;
+  bool _sending = false;
+  final List<Completer<void>> _sendQueue = [];
 
   Smb2Sender(this._connection, this._multiplexer);
 
@@ -56,15 +57,21 @@ class Smb2Sender {
   }
 
   Future<void> _acquireSendLock() async {
-    while (_sendLock != null) {
-      await _sendLock!.future;
+    if (!_sending) {
+      _sending = true;
+      return;
     }
-    _sendLock = Completer<void>();
+    final waiter = Completer<void>();
+    _sendQueue.add(waiter);
+    await waiter.future;
   }
 
   void _releaseSendLock() {
-    final lock = _sendLock;
-    _sendLock = null;
-    lock?.complete();
+    if (_sendQueue.isNotEmpty) {
+      // Wake exactly one waiter (FIFO)
+      _sendQueue.removeAt(0).complete();
+    } else {
+      _sending = false;
+    }
   }
 }
