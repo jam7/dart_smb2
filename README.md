@@ -69,6 +69,39 @@ final readers = await Future.wait(futures);
 await client.disconnect();
 ```
 
+## Architecture
+
+### Multiplexing
+
+SMB2 assigns each request a unique MessageId. The server includes the same MessageId in its response, allowing multiple requests to be in-flight simultaneously on a single TCP connection.
+
+```
+Client                          Server
+  ├─ Send Read(MsgId=1) ──────→  ├─ Process 1
+  ├─ Send Read(MsgId=2) ──────→  ├─ Process 2
+  ├─ Send Read(MsgId=3) ──────→  ├─ Process 3
+  │                               │
+  ├─ Recv Response(MsgId=2) ←──  │  (2 finished first)
+  ├─ Recv Response(MsgId=1) ←──  │
+  └─ Recv Response(MsgId=3) ←──  │
+```
+
+Sends are serialized through a FIFO mutex (protecting the TCP socket), while a dedicated receive loop dispatches responses to the correct caller by MessageId.
+
+### Read pipelining
+
+For single-file reads, `readStream` sends multiple Read requests before waiting for the first response (read-ahead). This hides network round-trip latency by keeping the server's disk I/O busy.
+
+```
+readAhead=3:
+  Send Read(0-1MB) → Send Read(1-2MB) → Send Read(2-3MB)
+    → Recv 0-1MB → Send Read(3-4MB) → Recv 1-2MB → ...
+```
+
+### Flow control
+
+SMB2 uses a credit system: the server grants credits in each response, and the client must not send more requests than it has credits for. Instead of tracking individual credits (which requires careful bookkeeping), dart_smb2 caps the number of concurrent in-flight requests at 32 (configurable). Since servers typically grant 32 credits per response, this keeps the client well within budget while being simple to reason about.
+
 ## Phase 1 (current)
 
 - TCP connection (port 445)
