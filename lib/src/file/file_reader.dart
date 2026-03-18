@@ -83,21 +83,40 @@ class Smb2FileReader {
   }
 
   /// Read entire file as a byte stream.
-  Stream<Uint8List> readStream({int blockSize = 0}) {
+  ///
+  /// Uses pipelined reads: up to [readAhead] requests are sent before
+  /// waiting for responses, hiding network round-trip latency.
+  Stream<Uint8List> readStream({int blockSize = 0, int readAhead = 3}) {
     final effectiveBlockSize = blockSize > 0
         ? (blockSize > _maxReadSize ? _maxReadSize : blockSize)
         : _maxReadSize;
 
-    return _streamRead(effectiveBlockSize);
+    return _streamRead(effectiveBlockSize, readAhead);
   }
 
-  Stream<Uint8List> _streamRead(int blockSize) async* {
-    int offset = 0;
-    while (offset < _fileSize) {
-      final chunk = await readRange(offset, blockSize);
+  Stream<Uint8List> _streamRead(int blockSize, int readAhead) async* {
+    // Send up to [readAhead] Read requests before waiting for the first
+    // response. As each response arrives, send the next request to keep
+    // the pipeline full.
+    final pending = <Future<Uint8List>>[];
+    int nextOffset = 0;
+
+    // Fill the pipeline
+    while (pending.length < readAhead && nextOffset < _fileSize) {
+      pending.add(readRange(nextOffset, blockSize));
+      nextOffset += blockSize;
+    }
+
+    while (pending.isNotEmpty) {
+      final chunk = await pending.removeAt(0);
       if (chunk.isEmpty) break;
       yield chunk;
-      offset += chunk.length;
+
+      // Send next request to keep pipeline full
+      if (nextOffset < _fileSize) {
+        pending.add(readRange(nextOffset, blockSize));
+        nextOffset += blockSize;
+      }
     }
   }
 
