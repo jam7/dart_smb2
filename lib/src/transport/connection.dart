@@ -65,21 +65,21 @@ class Smb2Connection {
   /// Read one complete SMB2 message (strips NetBIOS header).
   /// Returns the raw SMB2 packet bytes.
   Future<Uint8List> readMessage() async {
-    // Read 4-byte NetBIOS header
-    final header = await _readExact(4);
+    while (true) {
+      // Read 4-byte NetBIOS header
+      final header = await _readExact(4);
 
-    // Skip keep-alive (0x85)
-    if (header[0] == 0x85) {
-      return readMessage();
+      // Skip keep-alive (0x85)
+      if (header[0] == 0x85) continue;
+
+      // Parse length (24-bit big-endian)
+      final length = (header[1] << 16) | (header[2] << 8) | header[3];
+      if (length == 0) {
+        throw FormatException('SMB2 message with zero length');
+      }
+
+      return _readExact(length);
     }
-
-    // Parse length (24-bit big-endian)
-    final length = (header[1] << 16) | (header[2] << 8) | header[3];
-    if (length == 0) {
-      throw FormatException('SMB2 message with zero length');
-    }
-
-    return _readExact(length);
   }
 
   /// Close the connection.
