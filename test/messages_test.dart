@@ -214,6 +214,21 @@ void main() {
       final body = req.encode();
       expect(body.sublist(16, 32), fid);
     });
+
+    test('buildHeader sets creditCharge=1 for reads <= 64KB', () {
+      final req = ReadRequest(fileId: FileId(Uint8List(16)), offset: 0, length: 65536);
+      expect(req.buildHeader(sessionId: 1, treeId: 1).creditCharge, 1);
+    });
+
+    test('buildHeader sets creditCharge=16 for 1MB read', () {
+      final req = ReadRequest(fileId: FileId(Uint8List(16)), offset: 0, length: 1048576);
+      expect(req.buildHeader(sessionId: 1, treeId: 1).creditCharge, 16);
+    });
+
+    test('buildHeader sets creditCharge=2 for 65537 byte read', () {
+      final req = ReadRequest(fileId: FileId(Uint8List(16)), offset: 0, length: 65537);
+      expect(req.buildHeader(sessionId: 1, treeId: 1).creditCharge, 2);
+    });
   });
 
   group('CloseRequest', () {

@@ -32,10 +32,13 @@ class ReadRequest {
   });
 
   Smb2Header buildHeader({required int sessionId, required int treeId}) {
+    // SMB 2.1+: CreditCharge = ceil(Length / 65536)
+    final creditCharge = (length + 65535) ~/ 65536;
     return Smb2Header(
       command: Smb2Command.read,
       sessionId: sessionId,
       treeId: treeId,
+      creditCharge: creditCharge,
     );
   }
 
