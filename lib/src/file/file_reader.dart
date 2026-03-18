@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import '../protocol/messages/close.dart';
 import '../protocol/messages/create.dart';
 import '../protocol/messages/read.dart';
 import '../protocol/status.dart';
@@ -34,6 +35,18 @@ class Smb2FileReader {
         _maxReadSize = maxReadSize;
 
   int get fileSize => _fileSize;
+  FileId get fileId => _fileId;
+
+  /// Close the file handle. Must be called when done reading.
+  Future<void> close() async {
+    final req = CloseRequest(fileId: _fileId);
+    final header = req.buildHeader(sessionId: _sessionId, treeId: _treeId);
+    try {
+      await _sender.send(header, req.encode());
+    } catch (e, st) {
+      print('[Smb2FileReader] Close error: $e\n$st');
+    }
+  }
 
   /// Read a range of bytes from the file.
   Future<Uint8List> readRange(int offset, int length) async {

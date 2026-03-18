@@ -150,14 +150,18 @@ class Smb2Tree {
     try {
       return await reader.readRange(offset, length);
     } finally {
-      // Note: In Phase 2, we should add explicit close to FileReader
+      await reader.close();
     }
   }
 
   /// Read an entire file.
   Future<Uint8List> readFile(String path) async {
     final reader = await openRead(path);
-    return reader.readAll();
+    try {
+      return await reader.readAll();
+    } finally {
+      await reader.close();
+    }
   }
 
   /// Close a file by ID.
@@ -172,12 +176,6 @@ class Smb2Tree {
     } catch (e, st) {
       print('[Smb2Tree] Close file error: $e\n$st');
     }
-  }
-
-  /// Close a file reader (sends Close command).
-  Future<void> closeReader(Smb2FileReader reader) async {
-    // FileReader holds the FileId internally; we need to access it
-    // For now, this is a placeholder until we add a close method to FileReader
   }
 
   String _normalizePath(String path) {
