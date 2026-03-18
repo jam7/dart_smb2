@@ -32,25 +32,30 @@ class Smb2Sender {
       header.creditCharge = 1;
     }
 
-    // Wait for in-flight slot to prevent credit exhaustion
-    await _multiplexer.acquireInflightSlot();
+    // Acquire send lock, then check in-flight + allocate + register + write
+    // atomically (no yield points between them).
+    // If in-flight is full, release lock, wait, and retry.
+    late final Future<Smb2Response> responseFuture;
+    while (true) {
+      await _acquireSendLock();
+      if (_multiplexer.isInflightFull) {
+        _releaseSendLock();
+        await _multiplexer.acquireInflightSlot();
+        continue;
+      }
+      try {
+        final messageId = _multiplexer.allocateMessageId(creditCharge: header.creditCharge);
+        header.messageId = messageId;
+        responseFuture = _multiplexer.registerRequest(messageId);
 
-    // Allocate MessageId (reserves creditCharge consecutive IDs for SMB 2.1+)
-    final messageId = _multiplexer.allocateMessageId(creditCharge: header.creditCharge);
-    header.messageId = messageId;
-
-    // Register before sending to avoid race
-    final responseFuture = _multiplexer.registerRequest(messageId);
-
-    // Serialize socket writes
-    await _acquireSendLock();
-    try {
-      final packet = Uint8List(Smb2Header.size + body.length);
-      header.encode(packet, 0);
-      packet.setRange(Smb2Header.size, packet.length, body);
-      _connection.sendRaw(packet);
-    } finally {
-      _releaseSendLock();
+        final packet = Uint8List(Smb2Header.size + body.length);
+        header.encode(packet, 0);
+        packet.setRange(Smb2Header.size, packet.length, body);
+        _connection.sendRaw(packet);
+      } finally {
+        _releaseSendLock();
+      }
+      break;
     }
 
     return responseFuture;
