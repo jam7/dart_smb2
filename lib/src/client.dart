@@ -263,7 +263,7 @@ class Smb2Client {
       await client._authenticate(username, password, domain);
 
       return client;
-    } catch (e) {
+    } catch (_) {
       await connection.close();
       rethrow;
     }

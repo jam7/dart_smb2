@@ -74,8 +74,9 @@ class SpnegoAuth {
       final topLevel = parser.nextObject();
 
       return _findNtlmToken(topLevel, ntlmssSignature);
-    } catch (e) {
-      // Fallback: scan for NTLMSSP signature
+    } on Object {
+      // ASN.1 parse failed (FormatException, RangeError, ASN1Exception etc.)
+      // Fallback to raw byte scan
       return _scanForNtlmssp(spnegoToken, ntlmssSignature);
     }
   }
@@ -94,13 +95,13 @@ class SpnegoAuth {
       for (final child in obj.elements) {
         try {
           return _findNtlmToken(child, signature);
-        } catch (_) {
-          continue;
+        } on FormatException {
+          continue; // This child doesn't contain the token
         }
       }
     }
 
-    // Try to parse sub-elements
+    // Try to parse sub-elements (may throw various exceptions from asn1lib)
     if (obj.valueBytes().length > 2) {
       try {
         final subParser = ASN1Parser(obj.valueBytes());
@@ -108,12 +109,12 @@ class SpnegoAuth {
           final sub = subParser.nextObject();
           try {
             return _findNtlmToken(sub, signature);
-          } catch (_) {
-            continue;
+          } on FormatException {
+            continue; // This sub-element doesn't contain the token
           }
         }
-      } catch (_) {
-        // Not parseable
+      } on Object {
+        // asn1lib throws RangeError, ASN1Exception etc. for unparseable data
       }
     }
 
