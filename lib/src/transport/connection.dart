@@ -30,10 +30,10 @@ class Smb2Connection {
   /// Prepends the 4-byte NetBIOS session header.
   void sendRaw(Uint8List data) {
     final frame = Uint8List(4 + data.length);
-    final bd = ByteData.sublistView(frame);
     // NetBIOS session header: type=0x00, length=24-bit big-endian
     frame[0] = 0x00;
-    bd.setUint16(1, (data.length >> 8) & 0xFFFF, Endian.big);
+    frame[1] = (data.length >> 16) & 0xFF;
+    frame[2] = (data.length >> 8) & 0xFF;
     frame[3] = data.length & 0xFF;
     frame.setRange(4, 4 + data.length, data);
     _socket.add(frame);
