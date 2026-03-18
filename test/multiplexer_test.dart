@@ -48,6 +48,19 @@ void main() {
       expect(mux.allocateMessageId(), 13);
     });
   });
+
+  group('Smb2Multiplexer connection closed guard', () {
+    test('registerRequest throws when receive loop not started', () {
+      final mux = _createMultiplexer();
+      // _running is false because startReceiveLoop was never called
+      expect(() => mux.registerRequest(0), throwsA(isA<Smb2Exception>()));
+    });
+
+    test('acquireInflightSlot throws when receive loop not started', () {
+      final mux = _createMultiplexer();
+      expect(mux.acquireInflightSlot, throwsA(isA<Smb2Exception>()));
+    });
+  });
 }
 
 /// Create a Smb2Multiplexer without a real connection (for unit testing

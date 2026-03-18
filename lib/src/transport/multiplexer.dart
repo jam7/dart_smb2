@@ -57,6 +57,7 @@ class Smb2Multiplexer {
   Smb2Multiplexer(this._connection, {this.maxInflight = 32});
 
   int get availableCredits => _availableCredits;
+  bool get isInflightFull => _pending.length >= maxInflight;
 
   /// Allocate the next MessageId, reserving [creditCharge] consecutive IDs.
   /// SMB 2.1+: a request with CreditCharge=N consumes MessageIds [mid, mid+N-1].
@@ -67,18 +68,29 @@ class Smb2Multiplexer {
   }
 
   /// Register a pending request and return its Future.
+  /// Throws [Smb2Exception] if the receive loop has stopped.
   Future<Smb2Response> registerRequest(int messageId) {
+    _checkRunning();
     final completer = Completer<Smb2Response>();
     _pending[messageId] = _PendingRequest(completer);
     return completer.future;
   }
 
   /// Wait until in-flight count is below [maxInflight].
+  /// Throws [Smb2Exception] if the receive loop has stopped.
   Future<void> acquireInflightSlot() async {
+    _checkRunning();
     while (_pending.length >= maxInflight) {
       final waiter = Completer<void>();
       _inflightWaiters.add(waiter);
       await waiter.future;
+      _checkRunning();
+    }
+  }
+
+  void _checkRunning() {
+    if (!_running) {
+      throw Smb2Exception(0, 'Connection is closed');
     }
   }
 
