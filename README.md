@@ -59,7 +59,8 @@ await client.disconnect();
 dart test
 
 # Integration tests (requires a real SMB server)
-SMB_HOST=192.168.1.100 SMB_SHARE=photos SMB_USER=user SMB_PASS=pass \
+export PASS="your_password"
+SMB_HOST=192.168.1.100 SMB_SHARE=photos SMB_USER=user SMB_PASS="$PASS" \
   dart test --reporter expanded test/integration/
 ```
 
@@ -72,6 +73,32 @@ Integration tests are skipped automatically when `SMB_HOST` is not set.
 | `SMB_USER` | yes | Username |
 | `SMB_PASS` | yes | Password |
 | `SMB_PORT` | no | Port (default: 445) |
+
+## Benchmark
+
+Measure single-file and parallel download throughput with different read-ahead and parallelism settings.
+
+```bash
+export PASS="your_password"
+
+# Single file: compares readAhead=1,2,3,5,8
+SMB_HOST=192.168.1.100 SMB_SHARE=photos SMB_USER=user SMB_PASS="$PASS" \
+  SMB_BENCH_FILE="path/to/large_file.png" \
+  dart test --reporter expanded test/integration/benchmark_test.dart
+
+# Directory: compares parallel=1,2,3,5,8
+SMB_HOST=192.168.1.100 SMB_SHARE=photos SMB_USER=user SMB_PASS="$PASS" \
+  SMB_BENCH_DIR="path/to/directory" \
+  dart test --reporter expanded test/integration/benchmark_test.dart
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SMB_BENCH_FILE` | - | Single file path to benchmark |
+| `SMB_BENCH_DIR` | - | Directory path for parallel read benchmark |
+| `SMB_BENCH_READAHEAD` | 3 | Read-ahead count for streaming |
+| `SMB_BENCH_PARALLEL` | 3 | Parallel download count |
+| `SMB_BENCH_MAX_FILES` | 20 | Max files to read from directory |
 
 ## Phase 2 (planned)
 
