@@ -11,7 +11,8 @@ import 'dart:typed_data';
 class Smb2Connection {
   final Socket _socket;
   final StreamIterator<Uint8List> _reader;
-  Uint8List _buffer = Uint8List(0);
+  final BytesBuilder _buffer = BytesBuilder(copy: false);
+  int _bufferLength = 0;
   bool _closed = false;
 
   Smb2Connection._(this._socket) : _reader = StreamIterator(_socket);
@@ -40,20 +41,25 @@ class Smb2Connection {
 
   /// Read exactly [length] bytes from the socket.
   Future<Uint8List> _readExact(int length) async {
-    while (_buffer.length < length) {
+    while (_bufferLength < length) {
       final hasMore = await _reader.moveNext();
       if (!hasMore) {
         throw SocketException('Connection closed while reading');
       }
       final chunk = _reader.current;
-      final newBuf = Uint8List(_buffer.length + chunk.length);
-      newBuf.setRange(0, _buffer.length, _buffer);
-      newBuf.setRange(_buffer.length, newBuf.length, chunk);
-      _buffer = newBuf;
+      _buffer.add(chunk);
+      _bufferLength += chunk.length;
     }
-    final result = Uint8List.fromList(_buffer.sublist(0, length));
-    _buffer = Uint8List.fromList(_buffer.sublist(length));
-    return result;
+    // Take all buffered bytes, then split at [length]
+    final all = _buffer.takeBytes();
+    _bufferLength = 0;
+    if (all.length == length) {
+      return all;
+    }
+    // Put remainder back
+    _buffer.add(Uint8List.sublistView(all, length));
+    _bufferLength = all.length - length;
+    return Uint8List.sublistView(all, 0, length);
   }
 
   /// Read one complete SMB2 message (strips NetBIOS header).
