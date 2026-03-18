@@ -49,6 +49,11 @@ class Smb2FileReader {
   }
 
   /// Read a range of bytes from the file.
+  ///
+  /// Returns up to [length] bytes, but may return fewer if [length] exceeds
+  /// the server's max read size (typically 1MB). Check the returned
+  /// [Uint8List.length] for the actual number of bytes read.
+  /// Use [readStream] or [readAll] for complete file reads.
   Future<Uint8List> readRange(int offset, int length) async {
     final readLen = length.clamp(0, _fileSize - offset);
     if (readLen <= 0) return Uint8List(0);
