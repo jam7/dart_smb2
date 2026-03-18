@@ -23,10 +23,6 @@ class Smb2Sender {
   /// [header] is the SMB2 header (will be assigned a MessageId).
   /// [body] is the command-specific payload after the header.
   Future<Smb2Response> send(Smb2Header header, Uint8List body) async {
-    // Allocate MessageId
-    final messageId = _multiplexer.allocateMessageId();
-    header.messageId = messageId;
-
     // Request credits
     if (header.creditRequestResponse == 0) {
       header.creditRequestResponse = 32; // Request 32 credits
@@ -34,6 +30,10 @@ class Smb2Sender {
     if (header.creditCharge == 0) {
       header.creditCharge = 1;
     }
+
+    // Allocate MessageId (reserves creditCharge consecutive IDs for SMB 2.1+)
+    final messageId = _multiplexer.allocateMessageId(creditCharge: header.creditCharge);
+    header.messageId = messageId;
 
     // Register before sending to avoid race
     final responseFuture = _multiplexer.registerRequest(messageId);

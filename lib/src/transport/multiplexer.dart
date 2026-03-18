@@ -51,9 +51,12 @@ class Smb2Multiplexer {
 
   int get availableCredits => _availableCredits;
 
-  /// Allocate the next MessageId.
-  int allocateMessageId() {
-    return _nextMessageId++;
+  /// Allocate the next MessageId, reserving [creditCharge] consecutive IDs.
+  /// SMB 2.1+: a request with CreditCharge=N consumes MessageIds [mid, mid+N-1].
+  int allocateMessageId({int creditCharge = 1}) {
+    final mid = _nextMessageId;
+    _nextMessageId += creditCharge < 1 ? 1 : creditCharge;
+    return mid;
   }
 
   /// Register a pending request and return its Future.
@@ -82,7 +85,7 @@ class Smb2Multiplexer {
         final header = Smb2Header.decode(packet, 0);
         final body = Uint8List.sublistView(packet, Smb2Header.size);
 
-        // Update credits
+        // Update credits from server grant
         if (header.creditRequestResponse > 0) {
           _availableCredits += header.creditRequestResponse;
         }
@@ -124,14 +127,5 @@ class Smb2Multiplexer {
     _stopCompleter = Completer<void>();
     await _connection.close();
     await _stopCompleter!.future;
-  }
-
-  /// Use a credit (returns false if none available).
-  bool consumeCredit() {
-    if (_availableCredits > 0) {
-      _availableCredits--;
-      return true;
-    }
-    return false;
   }
 }
