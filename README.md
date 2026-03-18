@@ -52,6 +52,27 @@ await client.disconnect();
 - Close
 - MessageId-based multiplexing
 
+## Testing
+
+```bash
+# Unit tests
+dart test
+
+# Integration tests (requires a real SMB server)
+SMB_HOST=192.168.1.100 SMB_SHARE=photos SMB_USER=user SMB_PASS=pass \
+  dart test --reporter expanded test/integration/
+```
+
+Integration tests are skipped automatically when `SMB_HOST` is not set.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SMB_HOST` | yes | SMB server IP or hostname |
+| `SMB_SHARE` | yes | Share name |
+| `SMB_USER` | yes | Username |
+| `SMB_PASS` | yes | Password |
+| `SMB_PORT` | no | Port (default: 445) |
+
 ## Phase 2 (planned)
 
 - Write, file creation, delete, rename
