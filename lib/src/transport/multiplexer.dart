@@ -39,15 +39,19 @@ class Smb2Exception implements Exception {
 /// - Each outgoing request is assigned a unique MessageId
 /// - A dedicated receive loop reads responses and dispatches them
 ///   to the corresponding Completer by MessageId
+/// - In-flight request count is capped at [maxInflight] to prevent
+///   credit exhaustion and server overload
 class Smb2Multiplexer {
   final Smb2Connection _connection;
+  final int maxInflight;
   final Map<int, _PendingRequest> _pending = {};
   int _nextMessageId = 0;
   int _availableCredits = 1; // Start with 1, server grants more
   bool _running = false;
   Completer<void>? _stopCompleter;
+  final List<Completer<void>> _inflightWaiters = [];
 
-  Smb2Multiplexer(this._connection);
+  Smb2Multiplexer(this._connection, {this.maxInflight = 32});
 
   int get availableCredits => _availableCredits;
 
@@ -64,6 +68,15 @@ class Smb2Multiplexer {
     final completer = Completer<Smb2Response>();
     _pending[messageId] = _PendingRequest(completer);
     return completer.future;
+  }
+
+  /// Wait until in-flight count is below [maxInflight].
+  Future<void> acquireInflightSlot() async {
+    while (_pending.length >= maxInflight) {
+      final waiter = Completer<void>();
+      _inflightWaiters.add(waiter);
+      await waiter.future;
+    }
   }
 
   /// Start the receive loop. Must be called once after connection.
@@ -98,6 +111,7 @@ class Smb2Multiplexer {
         final pending = _pending.remove(header.messageId);
         if (pending != null) {
           pending.completer.complete(Smb2Response(header, body));
+          _notifyInflightWaiters();
         } else {
           print('[Smb2Multiplexer] Unexpected response for MessageId=${header.messageId}');
         }
@@ -114,9 +128,26 @@ class Smb2Multiplexer {
         }
       }
       _pending.clear();
+      // Wake up inflight waiters with error
+      for (final waiter in _inflightWaiters) {
+        if (!waiter.isCompleted) {
+          waiter.completeError(error);
+        }
+      }
+      _inflightWaiters.clear();
     } finally {
       _running = false;
       _stopCompleter?.complete();
+    }
+  }
+
+  void _notifyInflightWaiters() {
+    // Wake one waiter per freed slot
+    if (_inflightWaiters.isNotEmpty && _pending.length < maxInflight) {
+      final waiter = _inflightWaiters.removeAt(0);
+      if (!waiter.isCompleted) {
+        waiter.complete();
+      }
     }
   }
 

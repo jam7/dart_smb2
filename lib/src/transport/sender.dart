@@ -31,6 +31,9 @@ class Smb2Sender {
       header.creditCharge = 1;
     }
 
+    // Wait for in-flight slot to prevent credit exhaustion
+    await _multiplexer.acquireInflightSlot();
+
     // Allocate MessageId (reserves creditCharge consecutive IDs for SMB 2.1+)
     final messageId = _multiplexer.allocateMessageId(creditCharge: header.creditCharge);
     header.messageId = messageId;
