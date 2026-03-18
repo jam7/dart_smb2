@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as hash;
+import 'package:meta/meta.dart';
 import 'package:pointycastle/export.dart';
 
 /// NTLMSSP authentication (NTLMv2).
@@ -63,7 +64,7 @@ class NtlmAuth {
 
     // Compute NTLMv2 response
     final ntHash = _computeNtHash(password);
-    final responseKeyNT = _computeResponseKeyNT(ntHash, username, domain);
+    final responseKeyNT = computeResponseKeyNT(ntHash, username, domain);
 
     // Get timestamp from AV pairs, or use current time
     int timestamp;
@@ -178,9 +179,10 @@ class NtlmAuth {
     return result;
   }
 
-  /// Compute ResponseKeyNT = HMAC-MD5(NT_Hash, UPPERCASE(Username) + Domain).
-  static Uint8List _computeResponseKeyNT(Uint8List ntHash, String username, String domain) {
-    final userDomain = _encodeUtf16Le(username.toUpperCase() + domain);
+  /// Compute ResponseKeyNT = HMAC-MD5(NT_Hash, UPPERCASE(Username) + UPPERCASE(Domain)).
+  @visibleForTesting
+  static Uint8List computeResponseKeyNT(Uint8List ntHash, String username, String domain) {
+    final userDomain = _encodeUtf16Le(username.toUpperCase() + domain.toUpperCase());
     final hmac = hash.Hmac(hash.md5, ntHash);
     final digest = hmac.convert(userDomain);
     return Uint8List.fromList(digest.bytes);

@@ -95,6 +95,26 @@ void main() {
       expect(ntLen, greaterThan(0));
     });
 
+    test('ResponseKeyNT is case-insensitive for domain', () {
+      final ntHash = Uint8List(16); // dummy hash
+      final key1 = NtlmAuth.computeResponseKeyNT(ntHash, 'user', 'WorkGroup');
+      final key2 = NtlmAuth.computeResponseKeyNT(ntHash, 'user', 'WORKGROUP');
+      final key3 = NtlmAuth.computeResponseKeyNT(ntHash, 'user', 'workgroup');
+
+      expect(key1, equals(key2));
+      expect(key2, equals(key3));
+    });
+
+    test('ResponseKeyNT is case-insensitive for username', () {
+      final ntHash = Uint8List(16);
+      final key1 = NtlmAuth.computeResponseKeyNT(ntHash, 'User', 'DOMAIN');
+      final key2 = NtlmAuth.computeResponseKeyNT(ntHash, 'USER', 'DOMAIN');
+      final key3 = NtlmAuth.computeResponseKeyNT(ntHash, 'user', 'DOMAIN');
+
+      expect(key1, equals(key2));
+      expect(key2, equals(key3));
+    });
+
     test('different passwords produce different Type3 messages', () {
       final type2 = _buildMinimalType2();
 
