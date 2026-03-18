@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:logging/logging.dart';
+
 import '../protocol/messages/close.dart';
 import '../protocol/messages/create.dart';
 import '../protocol/messages/read.dart';
@@ -13,6 +15,7 @@ import '../transport/sender.dart';
 /// Supports streaming reads with configurable block size,
 /// leveraging the multiplexer for parallel operations.
 class Smb2FileReader {
+  static final _log = Logger('Smb2FileReader');
   final Smb2Sender _sender;
   final FileId _fileId;
   final int _fileSize;
@@ -44,7 +47,7 @@ class Smb2FileReader {
     try {
       await _sender.send(header, req.encode());
     } catch (e, st) {
-      print('[Smb2FileReader] Close error: $e\n$st');
+      _log.warning('Close error: $e', e, st);
     }
   }
 

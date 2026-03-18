@@ -17,10 +17,10 @@ SMB2/2.1/3.0 client library for Dart with true message multiplexing.
 
 | readAhead | Speed |
 |---|---|
-| 1 | 92 MB/s |
-| 2 | 113 MB/s |
+| 1 | 96 MB/s |
+| 2 | 109 MB/s |
 | 3 | 113 MB/s |
-| 5 | 113 MB/s |
+| 5 | 112 MB/s |
 | 8 | 113 MB/s |
 
 #### Parallel directory download (20 files, 196MB total)
@@ -29,9 +29,9 @@ SMB2/2.1/3.0 client library for Dart with true message multiplexing.
 |---|---|
 | 1 | 110 MB/s |
 | 2 | 112 MB/s |
-| 3 | 114 MB/s |
+| 3 | 116 MB/s |
 | 5 | 116 MB/s |
-| 8 | 116 MB/s |
+| 8 | 115 MB/s |
 
 Network-saturated at ~113 MB/s (Gigabit LAN limit). Read-ahead=2 is sufficient for single-file throughput.
 

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:logging/logging.dart';
+
 import 'auth/ntlmssp.dart';
 import 'auth/spnego.dart';
 import 'file/file_reader.dart';
@@ -23,6 +25,7 @@ import 'transport/sender.dart';
 /// Provides file operations on a specific share.
 /// All operations use the multiplexer for true parallel I/O.
 class Smb2Tree {
+  static final _log = Logger('Smb2Tree');
   final Smb2Sender _sender;
   final int _sessionId;
   final int _treeId;
@@ -174,7 +177,7 @@ class Smb2Tree {
     try {
       await _sender.send(closeHeader, closeReq.encode());
     } catch (e, st) {
-      print('[Smb2Tree] Close file error: $e\n$st');
+      _log.warning('Close file error: $e', e, st);
     }
   }
 
@@ -214,6 +217,7 @@ class Smb2Tree {
 /// await client.disconnect();
 /// ```
 class Smb2Client {
+  static final _log = Logger('Smb2Client');
   final Smb2Multiplexer _multiplexer;
   final Smb2Sender _sender;
   final String _host;
@@ -289,7 +293,7 @@ class Smb2Client {
     // Cap read size to 1MB for practical use
     if (_maxReadSize > 1048576) _maxReadSize = 1048576;
 
-    print('[Smb2Client] Negotiated dialect: ${Smb2Dialect.describe(_dialectRevision)}, '
+    _log.info('Negotiated dialect: ${Smb2Dialect.describe(_dialectRevision)}, '
         'maxRead: $_maxReadSize, maxWrite: $_maxWriteSize');
   }
 
@@ -338,7 +342,7 @@ class Smb2Client {
       );
     }
 
-    print('[Smb2Client] Authenticated as "$username", sessionId=0x${_sessionId.toRadixString(16)}');
+    _log.info('Authenticated as "$username", sessionId=0x${_sessionId.toRadixString(16)}');
   }
 
   /// Connect to a share and return an Smb2Tree for file operations.
@@ -358,7 +362,7 @@ class Smb2Client {
     final treeId = response.header.treeId;
     final treeResp = TreeConnectResponse.decode(response.body);
 
-    print('[Smb2Client] Connected to share "$shareName", treeId=$treeId, '
+    _log.info('Connected to share "$shareName", treeId=$treeId, '
         'type=${treeResp.shareType == ShareType.disk ? "DISK" : treeResp.shareType}');
 
     final tree = Smb2Tree._(
@@ -379,7 +383,7 @@ class Smb2Client {
     try {
       await _sender.send(header, req.encode());
     } catch (e, st) {
-      print('[Smb2Client] Tree disconnect error: $e\n$st');
+      _log.warning('Tree disconnect error: $e', e, st);
     }
     _trees.remove(tree);
   }
@@ -401,10 +405,10 @@ class Smb2Client {
       ByteData.sublistView(body).setUint16(0, 4, Endian.little); // StructureSize
       await _sender.send(header, body);
     } catch (e, st) {
-      print('[Smb2Client] Logoff error: $e\n$st');
+      _log.warning('Logoff error: $e', e, st);
     }
 
     await _multiplexer.stop();
-    print('[Smb2Client] Disconnected');
+    _log.info('Disconnected');
   }
 }

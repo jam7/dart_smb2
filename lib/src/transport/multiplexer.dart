@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:logging/logging.dart';
+
 import '../protocol/header.dart';
 import '../protocol/status.dart';
 import 'connection.dart';
@@ -42,6 +44,7 @@ class Smb2Exception implements Exception {
 /// - In-flight request count is capped at [maxInflight] to prevent
 ///   credit exhaustion and server overload
 class Smb2Multiplexer {
+  static final _log = Logger('Smb2Multiplexer');
   final Smb2Connection _connection;
   final int maxInflight;
   final Map<int, _PendingRequest> _pending = {};
@@ -91,7 +94,7 @@ class Smb2Multiplexer {
       while (_running && !_connection.isClosed) {
         final packet = await _connection.readMessage();
         if (packet.length < Smb2Header.size) {
-          print('[Smb2Multiplexer] Received packet too small: ${packet.length} bytes');
+          _log.warning('Received packet too small: ${packet.length} bytes');
           continue;
         }
 
@@ -113,12 +116,12 @@ class Smb2Multiplexer {
           pending.completer.complete(Smb2Response(header, body));
           _notifyInflightWaiters();
         } else {
-          print('[Smb2Multiplexer] Unexpected response for MessageId=${header.messageId}');
+          _log.warning('Unexpected response for MessageId=${header.messageId}');
         }
       }
     } catch (e, st) {
       if (_running) {
-        print('[Smb2Multiplexer] Receive loop error: $e\n$st');
+        _log.severe('Receive loop error: $e', e, st);
       }
       // Complete all pending requests with error
       final error = Smb2Exception(0, 'Connection lost: $e');
