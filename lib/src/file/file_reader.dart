@@ -110,15 +110,23 @@ class Smb2FileReader {
       nextOffset += blockSize;
     }
 
-    while (pending.isNotEmpty) {
-      final chunk = await pending.removeAt(0);
-      if (chunk.isEmpty) break;
-      yield chunk;
+    try {
+      while (pending.isNotEmpty) {
+        final chunk = await pending.removeAt(0);
+        if (chunk.isEmpty) break;
+        yield chunk;
 
-      // Send next request to keep pipeline full
-      if (nextOffset < _fileSize) {
-        pending.add(readRange(nextOffset, blockSize));
-        nextOffset += blockSize;
+        // Send next request to keep pipeline full
+        if (nextOffset < _fileSize) {
+          pending.add(readRange(nextOffset, blockSize));
+          nextOffset += blockSize;
+        }
+      }
+    } finally {
+      // Drain remaining pending futures to prevent unhandled async errors.
+      // These reads are already sent to the server; we just ignore the results.
+      for (final future in pending) {
+        future.ignore();
       }
     }
   }
