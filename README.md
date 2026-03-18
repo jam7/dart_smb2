@@ -6,6 +6,35 @@ SMB2/2.1/3.0 client library for Dart with true message multiplexing.
 
 `smb_connect` serializes all send/receive through a single mutex, making parallel file reads effectively sequential. `dart_smb2` uses MessageId-based multiplexing: sends are serialized (protecting the socket), but a dedicated receive loop dispatches responses by MessageId, enabling true parallel I/O.
 
+### Performance (18MB file, Gigabit LAN, SMB 2.1)
+
+| | smb_connect | dart_smb2 |
+|---|---|---|
+| Single file | 14 MB/s | **112 MB/s** (8x) |
+| 18 thumbnails (sequential vs 3-parallel) | ~23s | **~2s** |
+
+#### Single file read-ahead comparison
+
+| readAhead | Speed |
+|---|---|
+| 1 | 92 MB/s |
+| 2 | 113 MB/s |
+| 3 | 113 MB/s |
+| 5 | 113 MB/s |
+| 8 | 113 MB/s |
+
+#### Parallel directory download (20 files, 196MB total)
+
+| parallel | Speed |
+|---|---|
+| 1 | 110 MB/s |
+| 2 | 112 MB/s |
+| 3 | 114 MB/s |
+| 5 | 116 MB/s |
+| 8 | 116 MB/s |
+
+Network-saturated at ~113 MB/s (Gigabit LAN limit). Read-ahead=2 is sufficient for single-file throughput.
+
 ## Usage
 
 ```dart
