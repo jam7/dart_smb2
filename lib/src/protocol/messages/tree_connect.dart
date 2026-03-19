@@ -66,6 +66,9 @@ class TreeConnectResponse {
   });
 
   static TreeConnectResponse decode(Uint8List body) {
+    if (body.length < 16) {
+      throw FormatException('TreeConnectResponse too short: ${body.length} bytes');
+    }
     final data = ByteData.sublistView(body);
     return TreeConnectResponse(
       shareType: body[2],

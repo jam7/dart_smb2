@@ -100,6 +100,9 @@ class NegotiateResponse {
 
   /// Decode from response body (after 64-byte header).
   static NegotiateResponse decode(Uint8List body) {
+    if (body.length < 60) {
+      throw FormatException('NegotiateResponse too short: ${body.length} bytes');
+    }
     final data = ByteData.sublistView(body);
     final securityMode = data.getUint16(2, Endian.little);
     final dialectRevision = data.getUint16(4, Endian.little);

@@ -308,6 +308,9 @@ class _Type2Message {
   }
 
   static _Type2Message parse(Uint8List data) {
+    if (data.length < 32) {
+      throw FormatException('Type2 message too short: ${data.length} bytes');
+    }
     // Validate signature
     for (int i = 0; i < 8; i++) {
       if (data[i] != NtlmAuth._ntlmsspSignature[i]) {
@@ -340,6 +343,7 @@ class _Type2Message {
           final id = tiBd.getUint16(offset, Endian.little);
           final len = tiBd.getUint16(offset + 2, Endian.little);
           if (id == 0) break; // MsvAvEOL
+          if (offset + 4 + len > targetInfo.length) break;
           final value = Uint8List.fromList(
             targetInfo.sublist(offset + 4, offset + 4 + len),
           );

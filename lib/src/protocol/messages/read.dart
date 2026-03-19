@@ -73,6 +73,9 @@ class ReadResponse {
   ReadResponse({required this.data});
 
   static ReadResponse decode(Uint8List body) {
+    if (body.length < 8) {
+      throw FormatException('ReadResponse too short: ${body.length} bytes');
+    }
     final bd = ByteData.sublistView(body);
     final dataOffset = body[2] - Smb2Header.size; // DataOffset is from header start
     final dataLength = bd.getUint32(4, Endian.little);

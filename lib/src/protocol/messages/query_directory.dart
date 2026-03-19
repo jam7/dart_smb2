@@ -105,6 +105,9 @@ class DirectoryEntry {
 /// Parse QueryDirectory response.
 class QueryDirectoryResponse {
   static List<DirectoryEntry> decode(Uint8List body) {
+    if (body.length < 8) {
+      throw FormatException('QueryDirectoryResponse too short: ${body.length} bytes');
+    }
     final data = ByteData.sublistView(body);
     // StructureSize(2) + OutputBufferOffset(2) + OutputBufferLength(4)
     final outputBufferOffset = data.getUint16(2, Endian.little) - Smb2Header.size;
@@ -112,6 +115,10 @@ class QueryDirectoryResponse {
 
     if (outputBufferLength == 0 || outputBufferOffset < 0) {
       return [];
+    }
+    if (outputBufferOffset + outputBufferLength > body.length) {
+      throw FormatException('QueryDirectoryResponse buffer out of bounds: '
+          'offset=$outputBufferOffset, length=$outputBufferLength, body=${body.length}');
     }
 
     return _parseEntries(
@@ -124,7 +131,7 @@ class QueryDirectoryResponse {
     final entries = <DirectoryEntry>[];
     int offset = 0;
 
-    while (offset < buffer.length) {
+    while (offset + 94 <= buffer.length) { // 94 = minimum fixed fields size
       final data = ByteData.sublistView(buffer);
       final nextEntryOffset = data.getUint32(offset, Endian.little);
 

@@ -71,6 +71,9 @@ class SessionSetupResponse {
   bool get isNull => (sessionFlags & 0x0002) != 0;
 
   static SessionSetupResponse decode(Uint8List body) {
+    if (body.length < 8) {
+      throw FormatException('SessionSetupResponse too short: ${body.length} bytes');
+    }
     final data = ByteData.sublistView(body);
     final sessionFlags = data.getUint16(2, Endian.little);
     final securityBufferOffset = data.getUint16(4, Endian.little) - Smb2Header.size;

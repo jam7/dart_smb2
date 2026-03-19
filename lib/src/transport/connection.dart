@@ -77,6 +77,11 @@ class Smb2Connection {
       if (length == 0) {
         throw FormatException('SMB2 message with zero length');
       }
+      // Guard against excessive memory allocation (max 8MB, well above
+      // typical maxTransactSize/maxReadSize of 1-4MB)
+      if (length > 8 * 1024 * 1024) {
+        throw FormatException('SMB2 message too large: $length bytes');
+      }
 
       return _readExact(length);
     }

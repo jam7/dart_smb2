@@ -159,6 +159,9 @@ class CreateResponse {
   });
 
   static CreateResponse decode(Uint8List body) {
+    if (body.length < 80) {
+      throw FormatException('CreateResponse too short: ${body.length} bytes');
+    }
     final data = ByteData.sublistView(body);
     return CreateResponse(
       createAction: data.getUint32(4, Endian.little),
