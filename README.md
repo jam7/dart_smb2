@@ -106,7 +106,7 @@ Client                          Server
   ├─ Send Read(MsgId=1) ──────→  ├─ Process 1
   ├─ Send Read(MsgId=2) ──────→  ├─ Process 2
   ├─ Send Read(MsgId=3) ──────→  ├─ Process 3
-  │                               │
+  │                              │
   ├─ Recv Response(MsgId=2) ←──  │  (2 finished first)
   ├─ Recv Response(MsgId=1) ←──  │
   └─ Recv Response(MsgId=3) ←──  │
