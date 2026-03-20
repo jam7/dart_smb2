@@ -193,3 +193,9 @@ SMB_HOST=192.168.1.100 SMB_SHARE=photos SMB_USER=user SMB_PASS="$PASS" \
 - Write, file creation, delete, rename
 - SMB3 encryption & signing
 - Multi-channel
+
+## License
+
+This library is licensed under GPL-3.0. See [LICENSE](LICENSE).
+
+For commercial use without GPL obligations, a separate commercial license is available. Contact the author for details.
