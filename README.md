@@ -35,6 +35,32 @@ SMB2/2.1/3.0 client library for Dart with true message multiplexing.
 
 Network-saturated at ~113 MB/s (Gigabit LAN limit). Read-ahead=2 is sufficient for single-file throughput.
 
+### Performance (iPad WiFi, SMB 2.1)
+
+18MB PNG file over WiFi (802.11ac, iPad → Gigabit LAN server).
+
+#### Single file read-ahead comparison
+
+| readAhead | Speed |
+|---|---|
+| 1 | 50 MB/s |
+| 2 | 76 MB/s |
+| 3 | 77 MB/s |
+| 5 | 80 MB/s |
+| 8 | 88 MB/s |
+
+#### Parallel directory download (20 files, 230MB total)
+
+| parallel | Speed |
+|---|---|
+| 1 | 79 MB/s |
+| 2 | 86 MB/s |
+| 3 | 90 MB/s |
+| 5 | 91 MB/s |
+| 8 | 92 MB/s |
+
+WiFi latency makes read-ahead more impactful: readAhead=1→2 yields a 1.5x jump. Parallel reads saturate around 3 connections at ~90 MB/s.
+
 ## Usage
 
 ```dart
