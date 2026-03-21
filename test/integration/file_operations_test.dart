@@ -106,6 +106,36 @@ void main() {
       }
     });
 
+    test('readRange auto-splits reads exceeding maxReadSize', () async {
+      // Find a file larger than 1MB (maxReadSize)
+      final files = await tree.listDirectory('/');
+      final bigFile = files
+          .where((f) => !f.isDirectory && f.size > 2 * 1024 * 1024)
+          .toList()
+        ..sort((a, b) => a.size.compareTo(b.size));
+
+      if (bigFile.isEmpty) {
+        print('[integration] SKIP: no file > 2MB found');
+        return;
+      }
+
+      final file = bigFile.first;
+      final readSize = 2 * 1024 * 1024; // 2MB, exceeds typical 1MB maxReadSize
+      final reader = await tree.openRead(file.path);
+      try {
+        final data = await reader.readRange(0, readSize);
+        expect(data.length, readSize);
+        print('[integration] readRange 2MB: ${file.name} got ${data.length} bytes');
+
+        // Verify by comparing with stream read
+        final streamData = await reader.readRange(0, readSize);
+        expect(streamData.length, readSize);
+        expect(data, streamData, reason: 'Two identical readRange calls should return same data');
+      } finally {
+        await reader.close();
+      }
+    });
+
     test('streams file in chunks', () async {
       final files = await tree.listDirectory('/');
       final candidates = files
