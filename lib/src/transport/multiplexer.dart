@@ -136,23 +136,25 @@ class Smb2Multiplexer {
       if (_running) {
         _log.severe('Receive loop error: $e', e, st);
       }
-      // Complete all pending requests with error
-      final error = Smb2Exception(0, 'Connection lost: $e');
-      for (final pending in _pending.values) {
-        if (!pending.completer.isCompleted) {
-          pending.completer.completeError(error);
-        }
-      }
-      _pending.clear();
-      // Wake up inflight waiters with error
-      for (final waiter in _inflightWaiters) {
-        if (!waiter.isCompleted) {
-          waiter.completeError(error);
-        }
-      }
-      _inflightWaiters.clear();
     } finally {
       _running = false;
+      // Complete all pending requests with error so callers don't hang.
+      // This covers both error (connection lost) and normal exit (stop).
+      if (_pending.isNotEmpty || _inflightWaiters.isNotEmpty) {
+        final error = Smb2Exception(0, 'Connection closed');
+        for (final pending in _pending.values) {
+          if (!pending.completer.isCompleted) {
+            pending.completer.completeError(error);
+          }
+        }
+        _pending.clear();
+        for (final waiter in _inflightWaiters) {
+          if (!waiter.isCompleted) {
+            waiter.completeError(error);
+          }
+        }
+        _inflightWaiters.clear();
+      }
       _stopCompleter?.complete();
     }
   }
@@ -170,8 +172,8 @@ class Smb2Multiplexer {
   /// Stop the receive loop.
   Future<void> stop() async {
     if (!_running) return;
-    _running = false;
     _stopCompleter = Completer<void>();
+    _running = false;
     await _connection.close();
     await _stopCompleter!.future;
   }
