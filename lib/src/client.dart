@@ -259,6 +259,9 @@ class Smb2Client {
       host: host,
     );
 
+    _log.info('Created client@${client.hashCode.toRadixString(16)} '
+        'mux@${multiplexer.hashCode.toRadixString(16)}');
+
     try {
       // Start receive loop
       multiplexer.startReceiveLoop();

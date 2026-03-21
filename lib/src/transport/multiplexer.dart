@@ -134,7 +134,7 @@ class Smb2Multiplexer {
       }
     } catch (e, st) {
       if (_running) {
-        _log.severe('Receive loop error: $e', e, st);
+        _log.severe('Receive loop error (mux@${hashCode.toRadixString(16)}): $e', e, st);
       }
     } finally {
       _running = false;
