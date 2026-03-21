@@ -53,19 +53,37 @@ class Smb2FileReader {
 
   /// Read a range of bytes from the file.
   ///
-  /// Returns up to [length] bytes, but may return fewer if [length] exceeds
-  /// the server's max read size (typically 1MB). Check the returned
-  /// [Uint8List.length] for the actual number of bytes read.
-  /// Use [readStream] or [readAll] for complete file reads.
+  /// Automatically splits into multiple SMB Read requests if [length]
+  /// exceeds the server's max read size. Returns exactly [length] bytes
+  /// unless the file is shorter.
   Future<Uint8List> readRange(int offset, int length) async {
     final readLen = length.clamp(0, _fileSize - offset);
     if (readLen <= 0) return Uint8List(0);
 
-    final actualLen = readLen > _maxReadSize ? _maxReadSize : readLen;
+    if (readLen <= _maxReadSize) {
+      return _readOnce(offset, readLen);
+    }
+
+    // Split into multiple reads
+    final result = Uint8List(readLen);
+    var pos = 0;
+    while (pos < readLen) {
+      final chunkSize = (readLen - pos) > _maxReadSize ? _maxReadSize : (readLen - pos);
+      final chunk = await _readOnce(offset + pos, chunkSize);
+      if (chunk.isEmpty) break;
+      result.setRange(pos, pos + chunk.length, chunk);
+      pos += chunk.length;
+      if (chunk.length < chunkSize) break; // Server returned less than requested
+    }
+    return pos == readLen ? result : Uint8List.sublistView(result, 0, pos);
+  }
+
+  /// Single SMB Read request. Length must not exceed _maxReadSize.
+  Future<Uint8List> _readOnce(int offset, int length) async {
     final req = ReadRequest(
       fileId: _fileId,
       offset: offset,
-      length: actualLen,
+      length: length,
     );
     final header = req.buildHeader(sessionId: _sessionId, treeId: _treeId);
     final response = await _sender.send(header, req.encode());
