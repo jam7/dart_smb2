@@ -239,6 +239,9 @@ class Smb2Client {
   int get dialectRevision => _dialectRevision;
   int get maxReadSize => _maxReadSize;
 
+  /// Whether the connection is alive and the receive loop is running.
+  bool get isConnected => _multiplexer.isRunning;
+
   /// Connect to an SMB2 server and authenticate.
   static Future<Smb2Client> connect({
     required String host,

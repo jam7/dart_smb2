@@ -57,6 +57,7 @@ class Smb2Multiplexer {
   Smb2Multiplexer(this._connection, {this.maxInflight = 32});
 
   int get availableCredits => _availableCredits;
+  bool get isRunning => _running;
   bool get isInflightFull => _pending.length >= maxInflight;
 
   /// Allocate the next MessageId, reserving [creditCharge] consecutive IDs.
