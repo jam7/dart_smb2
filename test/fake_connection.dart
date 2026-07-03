@@ -23,10 +23,19 @@ class FakeConnection implements Smb2Connection {
 
   @override
   void sendRaw(Uint8List data) {
-    final header = Smb2Header.decode(data, 0);
-    final body = Uint8List.sublistView(data, Smb2Header.size);
-    sent.add((header: header, body: body));
-    onSend?.call(header, body);
+    // Split compound requests (chained via NextCommand) into one
+    // `sent` entry per sub-request.
+    var offset = 0;
+    while (true) {
+      final header = Smb2Header.decode(data, offset);
+      final end =
+          header.nextCommand > 0 ? offset + header.nextCommand : data.length;
+      final body = Uint8List.sublistView(data, offset + Smb2Header.size, end);
+      sent.add((header: header, body: body));
+      onSend?.call(header, body);
+      if (header.nextCommand == 0) break;
+      offset = end;
+    }
   }
 
   /// Queue a response packet for the receive loop.
@@ -34,6 +43,30 @@ class FakeConnection implements Smb2Connection {
     final packet = Uint8List(Smb2Header.size + body.length);
     header.encode(packet, 0);
     packet.setRange(Smb2Header.size, packet.length, body);
+    _incoming.add(packet);
+  }
+
+  /// Queue several responses compounded into a single transport packet,
+  /// chained via NextCommand with 8-byte alignment.
+  void pushCompoundResponse(List<(Smb2Header, Uint8List)> responses) {
+    final sizes = <int>[];
+    var total = 0;
+    for (var i = 0; i < responses.length; i++) {
+      final raw = Smb2Header.size + responses[i].$2.length;
+      final padded = (i == responses.length - 1) ? raw : (raw + 7) & ~7;
+      sizes.add(padded);
+      total += padded;
+    }
+    final packet = Uint8List(total);
+    var offset = 0;
+    for (var i = 0; i < responses.length; i++) {
+      final (header, body) = responses[i];
+      header.nextCommand = (i == responses.length - 1) ? 0 : sizes[i];
+      header.encode(packet, offset);
+      packet.setRange(offset + Smb2Header.size,
+          offset + Smb2Header.size + body.length, body);
+      offset += sizes[i];
+    }
     _incoming.add(packet);
   }
 
@@ -49,7 +82,12 @@ class FakeConnection implements Smb2Connection {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
-    await _incoming.close();
+    // Cancel the iterator like the real connection cancels its reader.
+    // Awaiting _incoming.close() would deadlock when undelivered events
+    // remain after the receive loop has already exited: the done event
+    // is never delivered, so its future never completes.
+    await _iter.cancel();
+    unawaited(_incoming.close());
   }
 }
 

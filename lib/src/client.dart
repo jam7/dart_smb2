@@ -13,6 +13,7 @@ import 'protocol/messages/close.dart';
 import 'protocol/messages/create.dart';
 import 'protocol/messages/negotiate.dart';
 import 'protocol/messages/query_directory.dart';
+import 'protocol/messages/read.dart';
 import 'protocol/messages/session_setup.dart';
 import 'protocol/messages/tree_connect.dart';
 import 'protocol/status.dart';
@@ -172,13 +173,75 @@ class Smb2Tree {
   }
 
   /// Read a range of bytes from a file.
+  ///
+  /// Ranges within one server read (<= maxReadSize) are issued as a
+  /// compound Create+Read+Close: one round trip instead of three.
   Future<Uint8List> readRange(String path, {required int offset, required int length}) async {
+    if (length <= _maxReadSize) {
+      return _readRangeCompound(path, offset, length);
+    }
     final reader = await openRead(path);
     try {
       return await reader.readRange(offset, length);
     } finally {
       await reader.close();
     }
+  }
+
+  /// Open, read and close in a single compound round trip.
+  Future<Uint8List> _readRangeCompound(String path, int offset, int length) async {
+    final normalizedPath = _normalizePath(path);
+    final createReq = CreateRequest(
+      fileName: normalizedPath,
+      desiredAccess: AccessMask.read,
+      shareAccess: ShareAccess.all,
+      createDisposition: CreateDisposition.fileOpen,
+      createOptions: CreateOptions.nonDirectoryFile,
+    );
+    final readReq = ReadRequest(
+      fileId: FileId.related,
+      offset: offset,
+      length: length,
+    );
+    final closeReq = CloseRequest(fileId: FileId.related);
+
+    final futures = await _sender.sendCompound([
+      (
+        createReq.buildHeader(sessionId: _sessionId, treeId: _treeId),
+        createReq.encode(),
+      ),
+      (
+        readReq.buildHeader(sessionId: _sessionId, treeId: _treeId),
+        readReq.encode(),
+      ),
+      (
+        closeReq.buildHeader(sessionId: _sessionId, treeId: _treeId),
+        closeReq.encode(),
+      ),
+    ]);
+    final createFuture = futures[0];
+    final readFuture = futures[1];
+    final closeFuture = futures[2];
+
+    // If Create fails below, the Read/Close responses (error replies from
+    // the server) must still be consumed without unhandled async errors.
+    readFuture.ignore();
+    closeFuture.then<void>(
+      (_) {},
+      onError: (Object e, StackTrace st) =>
+          _log.warning('Close error: $e', e, st),
+    );
+
+    final createResp = await createFuture;
+    _checkStatus(createResp, 'Open file "$normalizedPath"');
+
+    final readResp = await readFuture;
+    if (readResp.header.status == NtStatus.endOfFile ||
+        readResp.body.isEmpty) {
+      return Uint8List(0);
+    }
+    _checkStatus(readResp, 'Read "$normalizedPath" at offset $offset');
+    return ReadResponse.decode(readResp.body).data;
   }
 
   /// Read an entire file.

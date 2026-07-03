@@ -77,9 +77,10 @@ class Smb2Multiplexer {
     return completer.future;
   }
 
-  /// Try to reserve send budget: an in-flight slot plus [creditCharge]
-  /// credits. Synchronous, so the caller can send without yield points
-  /// between reservation and the actual write.
+  /// Try to reserve send budget: [slots] in-flight slots plus
+  /// [creditCharge] credits (the total across a compound). Synchronous,
+  /// so the caller can send without yield points between reservation and
+  /// the actual write.
   ///
   /// Returns false if the budget is exhausted (or the receive loop has
   /// stopped); the caller should [waitForBudget] and retry.
@@ -87,9 +88,9 @@ class Smb2Multiplexer {
   /// Liveness fallback: when nothing is in flight, no future response can
   /// replenish credits, so the send is allowed even with an insufficient
   /// balance (same behavior as before credit enforcement existed).
-  bool tryReserveBudget(int creditCharge) {
+  bool tryReserveBudget(int creditCharge, {int slots = 1}) {
     if (!_running) return false;
-    if (_pending.length >= maxInflight) return false;
+    if (_pending.length + slots > maxInflight) return false;
     if (_availableCredits < creditCharge) {
       if (_pending.isNotEmpty) return false;
       _log.warning('Sending with insufficient credits: '
@@ -133,28 +134,30 @@ class Smb2Multiplexer {
           continue;
         }
 
-        final header = Smb2Header.decode(packet, 0);
-        final body = Uint8List.sublistView(packet, Smb2Header.size);
-
-        // Update credits from server grant
-        if (header.creditRequestResponse > 0) {
-          _availableCredits += header.creditRequestResponse;
+        // A transport message may carry several compounded responses,
+        // chained via NextCommand. Dispatch each by its own MessageId.
+        var offset = 0;
+        while (true) {
+          if (packet.length - offset < Smb2Header.size) {
+            _log.warning('Compound response truncated at offset $offset '
+                '(packet: ${packet.length} bytes)');
+            break;
+          }
+          final header = Smb2Header.decode(packet, offset);
+          final next = header.nextCommand;
+          final end = next > 0 ? offset + next : packet.length;
+          if (next > 0 &&
+              (end > packet.length || next < Smb2Header.size)) {
+            _log.warning('Invalid NextCommand=$next at offset $offset '
+                '(packet: ${packet.length} bytes)');
+            break;
+          }
+          final body =
+              Uint8List.sublistView(packet, offset + Smb2Header.size, end);
+          _dispatchResponse(header, body);
+          if (next == 0) break;
+          offset = end;
         }
-
-        // STATUS_PENDING: don't complete yet, wait for real response.
-        // The interim response still carries a credit grant.
-        if (header.status == NtStatus.pending) {
-          _notifyBudgetWaiters();
-          continue;
-        }
-
-        final pending = _pending.remove(header.messageId);
-        if (pending != null) {
-          pending.completer.complete(Smb2Response(header, body));
-        } else {
-          _log.warning('Unexpected response for MessageId=${header.messageId}');
-        }
-        _notifyBudgetWaiters();
       }
     } catch (e, st) {
       if (_running) {
@@ -181,6 +184,28 @@ class Smb2Multiplexer {
       }
       _stopCompleter?.complete();
     }
+  }
+
+  void _dispatchResponse(Smb2Header header, Uint8List body) {
+    // Update credits from server grant
+    if (header.creditRequestResponse > 0) {
+      _availableCredits += header.creditRequestResponse;
+    }
+
+    // STATUS_PENDING: don't complete yet, wait for real response.
+    // The interim response still carries a credit grant.
+    if (header.status == NtStatus.pending) {
+      _notifyBudgetWaiters();
+      return;
+    }
+
+    final pending = _pending.remove(header.messageId);
+    if (pending != null) {
+      pending.completer.complete(Smb2Response(header, body));
+    } else {
+      _log.warning('Unexpected response for MessageId=${header.messageId}');
+    }
+    _notifyBudgetWaiters();
   }
 
   void _notifyBudgetWaiters() {

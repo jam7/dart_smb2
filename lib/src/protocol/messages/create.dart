@@ -61,6 +61,11 @@ class FileId {
     }
   }
 
+  /// Sentinel (all 0xFF) used by related compound requests to inherit
+  /// the FileId produced by the preceding Create in the chain.
+  static final FileId related =
+      FileId(Uint8List.fromList(List.filled(16, 0xFF)));
+
   @override
   String toString() => bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 }
