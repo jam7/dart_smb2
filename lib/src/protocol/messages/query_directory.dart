@@ -37,10 +37,14 @@ class QueryDirectoryRequest {
   });
 
   Smb2Header buildHeader({required int sessionId, required int treeId}) {
+    // SMB 2.1+: requests carrying more than 64KB must charge one credit
+    // per started 64KB block, or strict servers disconnect.
+    final creditCharge = (outputBufferLength + 65535) ~/ 65536;
     return Smb2Header(
       command: Smb2Command.queryDirectory,
       sessionId: sessionId,
       treeId: treeId,
+      creditCharge: creditCharge,
     );
   }
 

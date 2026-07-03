@@ -30,6 +30,7 @@ class Smb2Tree {
   final int _sessionId;
   final int _treeId;
   final int _maxReadSize;
+  final int _maxTransactSize;
   final String _shareName;
 
   Smb2Tree._({
@@ -37,11 +38,13 @@ class Smb2Tree {
     required int sessionId,
     required int treeId,
     required int maxReadSize,
+    required int maxTransactSize,
     required String shareName,
   })  : _sender = sender,
         _sessionId = sessionId,
         _treeId = treeId,
         _maxReadSize = maxReadSize,
+        _maxTransactSize = maxTransactSize,
         _shareName = shareName;
 
   /// Test-only constructor: build a tree directly on a (fake) transport,
@@ -51,12 +54,14 @@ class Smb2Tree {
     required int sessionId,
     required int treeId,
     required int maxReadSize,
+    int maxTransactSize = 65536,
     required String shareName,
   }) : this._(
           sender: sender,
           sessionId: sessionId,
           treeId: treeId,
           maxReadSize: maxReadSize,
+          maxTransactSize: maxTransactSize,
           shareName: shareName,
         );
 
@@ -96,6 +101,9 @@ class Smb2Tree {
           fileId: fileId,
           pattern: '*',
           flags: firstQuery ? QueryDirectoryFlags.restartScans : 0,
+          // Fetch as much as the server allows per round trip; paging is
+          // inherently serial, so buffer size determines listing latency.
+          outputBufferLength: _maxTransactSize,
         );
         final queryHeader = queryReq.buildHeader(
           sessionId: _sessionId,
@@ -243,6 +251,7 @@ class Smb2Client {
   int _sessionId = 0;
   int _maxReadSize = 65536;
   int _maxWriteSize = 65536;
+  int _maxTransactSize = 65536;
   int _dialectRevision = 0;
   final List<Smb2Tree> _trees = [];
 
@@ -314,12 +323,15 @@ class Smb2Client {
     _dialectRevision = negotiateResp.dialectRevision;
     _maxReadSize = negotiateResp.maxReadSize;
     _maxWriteSize = negotiateResp.maxWriteSize;
+    _maxTransactSize = negotiateResp.maxTransactSize;
 
-    // Cap read size to 1MB for practical use
+    // Cap sizes to 1MB for practical use (bounds memory and creditCharge)
     if (_maxReadSize > 1048576) _maxReadSize = 1048576;
+    if (_maxTransactSize > 1048576) _maxTransactSize = 1048576;
 
     _log.info('Negotiated dialect: ${Smb2Dialect.describe(_dialectRevision)}, '
-        'maxRead: $_maxReadSize, maxWrite: $_maxWriteSize');
+        'maxRead: $_maxReadSize, maxWrite: $_maxWriteSize, '
+        'maxTransact: $_maxTransactSize');
   }
 
   Future<void> _authenticate(String username, String password, String domain) async {
@@ -395,6 +407,7 @@ class Smb2Client {
       sessionId: _sessionId,
       treeId: treeId,
       maxReadSize: _maxReadSize,
+      maxTransactSize: _maxTransactSize,
       shareName: shareName,
     );
     _trees.add(tree);
