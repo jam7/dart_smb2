@@ -44,6 +44,22 @@ class Smb2Tree {
         _maxReadSize = maxReadSize,
         _shareName = shareName;
 
+  /// Test-only constructor: build a tree directly on a (fake) transport,
+  /// bypassing the connect/negotiate/authenticate handshake.
+  Smb2Tree.forTesting({
+    required Smb2Sender sender,
+    required int sessionId,
+    required int treeId,
+    required int maxReadSize,
+    required String shareName,
+  }) : this._(
+          sender: sender,
+          sessionId: sessionId,
+          treeId: treeId,
+          maxReadSize: maxReadSize,
+          shareName: shareName,
+        );
+
   String get shareName => _shareName;
   int get treeId => _treeId;
 
@@ -168,17 +184,20 @@ class Smb2Tree {
   }
 
   /// Close a file by ID.
+  ///
+  /// Fire-and-forget: returns once the Close request is handed to the
+  /// sender (see [Smb2FileReader.close] for the rationale).
   Future<void> _closeFile(FileId fileId) async {
     final closeReq = CloseRequest(fileId: fileId);
     final closeHeader = closeReq.buildHeader(
       sessionId: _sessionId,
       treeId: _treeId,
     );
-    try {
-      await _sender.send(closeHeader, closeReq.encode());
-    } catch (e, st) {
-      _log.warning('Close file error: $e', e, st);
-    }
+    _sender.send(closeHeader, closeReq.encode()).then<void>(
+      (_) {},
+      onError: (Object e, StackTrace st) =>
+          _log.warning('Close file error: $e', e, st),
+    );
   }
 
   String _normalizePath(String path) {

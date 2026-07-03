@@ -41,14 +41,23 @@ class Smb2FileReader {
   FileId get fileId => _fileId;
 
   /// Close the file handle. Must be called when done reading.
+  ///
+  /// Fire-and-forget: returns once the Close request is handed to the
+  /// sender, without waiting for the server's response. The multiplexer
+  /// still receives the response, so in-flight slot and credit accounting
+  /// stay correct. Close errors were never reported to callers (only
+  /// logged), so the observable behavior is unchanged.
   Future<void> close() async {
     final req = CloseRequest(fileId: _fileId);
     final header = req.buildHeader(sessionId: _sessionId, treeId: _treeId);
-    try {
-      await _sender.send(header, req.encode());
-    } catch (e, st) {
-      _log.warning('Close error: $e', e, st);
-    }
+    // The error handler is attached synchronously, so a failure (error
+    // response or connection loss) is logged instead of becoming an
+    // unhandled async error.
+    _sender.send(header, req.encode()).then<void>(
+      (_) {},
+      onError: (Object e, StackTrace st) =>
+          _log.warning('Close error: $e', e, st),
+    );
   }
 
   /// Read a range of bytes from the file.
