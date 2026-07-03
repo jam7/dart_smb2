@@ -82,7 +82,9 @@ class ReadResponse {
 
     Uint8List data;
     if (dataLength > 0 && dataOffset >= 0 && dataOffset + dataLength <= body.length) {
-      data = Uint8List.fromList(body.sublist(dataOffset, dataOffset + dataLength));
+      // Zero copy: a Read response is almost entirely data, so keeping
+      // the packet alive via this view wastes < 1% of its size.
+      data = Uint8List.sublistView(body, dataOffset, dataOffset + dataLength);
     } else {
       data = Uint8List(0);
     }

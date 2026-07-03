@@ -133,10 +133,10 @@ class QueryDirectoryResponse {
   /// Parse FileBothDirectoryInformation entries from buffer.
   static List<DirectoryEntry> _parseEntries(Uint8List buffer) {
     final entries = <DirectoryEntry>[];
+    final data = ByteData.sublistView(buffer);
     int offset = 0;
 
     while (offset + 94 <= buffer.length) { // 94 = minimum fixed fields size
-      final data = ByteData.sublistView(buffer);
       final nextEntryOffset = data.getUint32(offset, Endian.little);
 
       final creationTime = _readUint64(data, offset + 8);
