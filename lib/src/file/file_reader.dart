@@ -54,9 +54,11 @@ class Smb2FileReader {
   /// Read a range of bytes from the file.
   ///
   /// Automatically splits into multiple SMB Read requests if [length]
-  /// exceeds the server's max read size. Returns exactly [length] bytes
-  /// unless the file is shorter.
-  Future<Uint8List> readRange(int offset, int length) async {
+  /// exceeds the server's max read size, issuing up to [readAhead]
+  /// requests in parallel to hide network round-trip latency.
+  /// Returns exactly [length] bytes unless the file is shorter.
+  Future<Uint8List> readRange(int offset, int length, {int readAhead = 4}) async {
+    if (offset >= _fileSize) return Uint8List(0);
     final readLen = length.clamp(0, _fileSize - offset);
     if (readLen <= 0) return Uint8List(0);
 
@@ -64,18 +66,54 @@ class Smb2FileReader {
       return _readOnce(offset, readLen);
     }
 
-    // Split into multiple reads
+    // Split into chunks read by a bounded pool of workers. A shared
+    // cursor hands out chunk indices; all state is local to this call.
+    // Chunks write to disjoint regions of [result], so completion order
+    // doesn't matter. The pool is bounded so one huge range doesn't
+    // monopolize the multiplexer's in-flight slots and credits.
+    final chunkCount = (readLen + _maxReadSize - 1) ~/ _maxReadSize;
     final result = Uint8List(readLen);
-    var pos = 0;
-    while (pos < readLen) {
-      final chunkSize = (readLen - pos) > _maxReadSize ? _maxReadSize : (readLen - pos);
-      final chunk = await _readOnce(offset + pos, chunkSize);
-      if (chunk.isEmpty) break;
-      result.setRange(pos, pos + chunk.length, chunk);
-      pos += chunk.length;
-      if (chunk.length < chunkSize) break; // Server returned less than requested
+    final received = List<int>.filled(chunkCount, 0);
+    var nextChunk = 0;
+    var failed = false;
+
+    Future<void> worker() async {
+      while (!failed) {
+        final i = nextChunk++;
+        if (i >= chunkCount) return;
+        final pos = i * _maxReadSize;
+        final chunkSize =
+            (readLen - pos) > _maxReadSize ? _maxReadSize : (readLen - pos);
+        final Uint8List chunk;
+        try {
+          chunk = await _readOnce(offset + pos, chunkSize);
+        } catch (_) {
+          failed = true; // Stop workers from picking up new chunks
+          rethrow;
+        }
+        result.setRange(pos, pos + chunk.length, chunk);
+        received[i] = chunk.length;
+      }
     }
-    return pos == readLen ? result : Uint8List.sublistView(result, 0, pos);
+
+    final workerCount = readAhead.clamp(1, chunkCount);
+    // Future.wait subscribes to every worker, so no error goes unhandled;
+    // the first error is rethrown after all workers have stopped.
+    await Future.wait([for (var i = 0; i < workerCount; i++) worker()]);
+
+    // A chunk may come back shorter than requested; only the contiguous
+    // prefix is valid then (same semantics as the old sequential loop).
+    var validLen = 0;
+    for (var i = 0; i < chunkCount; i++) {
+      final pos = i * _maxReadSize;
+      final expected =
+          (readLen - pos) > _maxReadSize ? _maxReadSize : (readLen - pos);
+      validLen += received[i];
+      if (received[i] < expected) break;
+    }
+    return validLen == readLen
+        ? result
+        : Uint8List.sublistView(result, 0, validLen);
   }
 
   /// Single SMB Read request. Length must not exceed _maxReadSize.

@@ -41,8 +41,9 @@ class Smb2Exception implements Exception {
 /// - Each outgoing request is assigned a unique MessageId
 /// - A dedicated receive loop reads responses and dispatches them
 ///   to the corresponding Completer by MessageId
-/// - In-flight request count is capped at [maxInflight] to prevent
-///   credit exhaustion and server overload
+/// - Send budget (in-flight slots + credit window) is enforced via
+///   [tryReserveBudget] / [waitForBudget] to prevent credit exhaustion
+///   and server overload
 class Smb2Multiplexer {
   static final _log = Logger('Smb2Multiplexer');
   final Smb2Connection _connection;
@@ -52,13 +53,12 @@ class Smb2Multiplexer {
   int _availableCredits = 1; // Start with 1, server grants more
   bool _running = false;
   Completer<void>? _stopCompleter;
-  final List<Completer<void>> _inflightWaiters = [];
+  final List<Completer<void>> _budgetWaiters = [];
 
   Smb2Multiplexer(this._connection, {this.maxInflight = 32});
 
   int get availableCredits => _availableCredits;
   bool get isRunning => _running;
-  bool get isInflightFull => _pending.length >= maxInflight;
 
   /// Allocate the next MessageId, reserving [creditCharge] consecutive IDs.
   /// SMB 2.1+: a request with CreditCharge=N consumes MessageIds [mid, mid+N-1].
@@ -77,16 +77,38 @@ class Smb2Multiplexer {
     return completer.future;
   }
 
-  /// Wait until in-flight count is below [maxInflight].
-  /// Throws [Smb2Exception] if the receive loop has stopped.
-  Future<void> acquireInflightSlot() async {
-    _checkRunning();
-    while (_pending.length >= maxInflight) {
-      final waiter = Completer<void>();
-      _inflightWaiters.add(waiter);
-      await waiter.future;
-      _checkRunning();
+  /// Try to reserve send budget: an in-flight slot plus [creditCharge]
+  /// credits. Synchronous, so the caller can send without yield points
+  /// between reservation and the actual write.
+  ///
+  /// Returns false if the budget is exhausted (or the receive loop has
+  /// stopped); the caller should [waitForBudget] and retry.
+  ///
+  /// Liveness fallback: when nothing is in flight, no future response can
+  /// replenish credits, so the send is allowed even with an insufficient
+  /// balance (same behavior as before credit enforcement existed).
+  bool tryReserveBudget(int creditCharge) {
+    if (!_running) return false;
+    if (_pending.length >= maxInflight) return false;
+    if (_availableCredits < creditCharge) {
+      if (_pending.isNotEmpty) return false;
+      _log.warning('Sending with insufficient credits: '
+          'available=$_availableCredits, charge=$creditCharge');
+      _availableCredits = 0;
+    } else {
+      _availableCredits -= creditCharge;
     }
+    return true;
+  }
+
+  /// Wait until send budget may be available again (a response arrived).
+  /// Throws [Smb2Exception] if the receive loop has stopped.
+  Future<void> waitForBudget() async {
+    _checkRunning();
+    final waiter = Completer<void>();
+    _budgetWaiters.add(waiter);
+    await waiter.future;
+    _checkRunning();
   }
 
   void _checkRunning() {
@@ -119,18 +141,20 @@ class Smb2Multiplexer {
           _availableCredits += header.creditRequestResponse;
         }
 
-        // STATUS_PENDING: don't complete yet, wait for real response
+        // STATUS_PENDING: don't complete yet, wait for real response.
+        // The interim response still carries a credit grant.
         if (header.status == NtStatus.pending) {
+          _notifyBudgetWaiters();
           continue;
         }
 
         final pending = _pending.remove(header.messageId);
         if (pending != null) {
           pending.completer.complete(Smb2Response(header, body));
-          _notifyInflightWaiters();
         } else {
           _log.warning('Unexpected response for MessageId=${header.messageId}');
         }
+        _notifyBudgetWaiters();
       }
     } catch (e, st) {
       if (_running) {
@@ -140,7 +164,7 @@ class Smb2Multiplexer {
       _running = false;
       // Complete all pending requests with error so callers don't hang.
       // This covers both error (connection lost) and normal exit (stop).
-      if (_pending.isNotEmpty || _inflightWaiters.isNotEmpty) {
+      if (_pending.isNotEmpty || _budgetWaiters.isNotEmpty) {
         final error = Smb2Exception(0, 'Connection closed');
         for (final pending in _pending.values) {
           if (!pending.completer.isCompleted) {
@@ -148,21 +172,25 @@ class Smb2Multiplexer {
           }
         }
         _pending.clear();
-        for (final waiter in _inflightWaiters) {
+        for (final waiter in _budgetWaiters) {
           if (!waiter.isCompleted) {
             waiter.completeError(error);
           }
         }
-        _inflightWaiters.clear();
+        _budgetWaiters.clear();
       }
       _stopCompleter?.complete();
     }
   }
 
-  void _notifyInflightWaiters() {
-    // Wake one waiter per freed slot
-    if (_inflightWaiters.isNotEmpty && _pending.length < maxInflight) {
-      final waiter = _inflightWaiters.removeAt(0);
+  void _notifyBudgetWaiters() {
+    // Wake all waiters and let each re-check via tryReserveBudget.
+    // Required credits differ per waiter, so waking just one could leave
+    // a satisfiable small request stuck behind an unsatisfiable large one.
+    if (_budgetWaiters.isEmpty) return;
+    final waiters = List.of(_budgetWaiters);
+    _budgetWaiters.clear();
+    for (final waiter in waiters) {
       if (!waiter.isCompleted) {
         waiter.complete();
       }

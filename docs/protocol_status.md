@@ -36,7 +36,7 @@ The full Negotiate → Authentication → TreeConnect → QueryDirectory → Cre
 |---|---|---|
 | Create | Implemented | Open files and directories (read access) |
 | Close | Implemented | |
-| Read | Implemented | Multi-block, read-ahead pipelining, up to 1MB/block |
+| Read | Implemented | Multi-block, read-ahead pipelining (readStream) and parallel split reads (readRange), up to 1MB/block |
 
 ### Directory Operations
 
@@ -52,11 +52,15 @@ The full Negotiate → Authentication → TreeConnect → QueryDirectory → Cre
 - FIFO send lock (serialized socket writes)
 - In-flight request tracking and cancellation
 
-### Credit Management (Partial)
+### Credit Management
 
-- Tracks server-granted credits
+- Tracks server-granted credits and enforces the credit window on send:
+  a request waits until the balance covers its credit charge
+- Liveness fallback: when nothing is in flight (so no response can
+  replenish credits), a request is sent despite an insufficient balance
+  and a warning is logged
 - Credit charge calculation for large reads: `ceil(length / 65536)`
-- Simple cap of 32 concurrent requests
+- In-flight cap of 32 concurrent requests (configurable)
 
 ### Protocol Infrastructure
 

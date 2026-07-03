@@ -32,15 +32,16 @@ class Smb2Sender {
       header.creditCharge = 1;
     }
 
-    // Acquire send lock, then check in-flight + allocate + register + write
+    // Acquire send lock, then reserve budget + allocate + register + write
     // atomically (no yield points between them).
-    // If in-flight is full, release lock, wait, and retry.
+    // If the budget (in-flight slot or credits) is exhausted, release the
+    // lock, wait for a response to free budget, and retry.
     late final Future<Smb2Response> responseFuture;
     while (true) {
       await _acquireSendLock();
-      if (_multiplexer.isInflightFull) {
+      if (!_multiplexer.tryReserveBudget(header.creditCharge)) {
         _releaseSendLock();
-        await _multiplexer.acquireInflightSlot();
+        await _multiplexer.waitForBudget();
         continue;
       }
       try {

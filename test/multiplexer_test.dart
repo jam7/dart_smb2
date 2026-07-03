@@ -56,9 +56,14 @@ void main() {
       expect(() => mux.registerRequest(0), throwsA(isA<Smb2Exception>()));
     });
 
-    test('acquireInflightSlot throws when receive loop not started', () {
+    test('waitForBudget throws when receive loop not started', () {
       final mux = _createMultiplexer();
-      expect(mux.acquireInflightSlot, throwsA(isA<Smb2Exception>()));
+      expect(mux.waitForBudget, throwsA(isA<Smb2Exception>()));
+    });
+
+    test('tryReserveBudget returns false when receive loop not started', () {
+      final mux = _createMultiplexer();
+      expect(mux.tryReserveBudget(1), isFalse);
     });
   });
 }
