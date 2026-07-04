@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../header.dart';
 import '../commands.dart';
+import '../utf16.dart';
 import 'create.dart';
 
 /// File information class for QueryDirectory.
@@ -49,7 +50,7 @@ class QueryDirectoryRequest {
   }
 
   Uint8List encode() {
-    final patternBytes = _encodeUtf16Le(pattern);
+    final patternBytes = encodeUtf16Le(pattern);
     final totalSize = _fileNameOffset + (patternBytes.isEmpty ? 1 : patternBytes.length);
     final body = Uint8List(totalSize);
     final data = ByteData.sublistView(body);
@@ -67,16 +68,6 @@ class QueryDirectoryRequest {
       body.setRange(_fileNameOffset, _fileNameOffset + patternBytes.length, patternBytes);
     }
     return body;
-  }
-
-  static Uint8List _encodeUtf16Le(String s) {
-    final units = s.codeUnits;
-    final bytes = Uint8List(units.length * 2);
-    final bd = ByteData.sublistView(bytes);
-    for (int i = 0; i < units.length; i++) {
-      bd.setUint16(i * 2, units[i], Endian.little);
-    }
-    return bytes;
   }
 }
 

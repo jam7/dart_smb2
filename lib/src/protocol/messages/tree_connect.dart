@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../header.dart';
 import '../commands.dart';
+import '../utf16.dart';
 
 /// Share types returned in Tree Connect response.
 class ShareType {
@@ -26,7 +27,7 @@ class TreeConnectRequest {
   }
 
   Uint8List encode() {
-    final pathBytes = _encodeUtf16Le(path);
+    final pathBytes = encodeUtf16Le(path);
     final totalSize = _pathOffset + pathBytes.length;
     final body = Uint8List(totalSize < 9 ? 9 : totalSize);
     final data = ByteData.sublistView(body);
@@ -38,16 +39,6 @@ class TreeConnectRequest {
 
     body.setRange(_pathOffset, _pathOffset + pathBytes.length, pathBytes);
     return body;
-  }
-
-  static Uint8List _encodeUtf16Le(String s) {
-    final units = s.codeUnits;
-    final bytes = Uint8List(units.length * 2);
-    final bd = ByteData.sublistView(bytes);
-    for (int i = 0; i < units.length; i++) {
-      bd.setUint16(i * 2, units[i], Endian.little);
-    }
-    return bytes;
   }
 }
 

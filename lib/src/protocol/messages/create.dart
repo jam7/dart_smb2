@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../header.dart';
 import '../commands.dart';
+import '../utf16.dart';
 
 /// Access mask flags.
 class AccessMask {
@@ -99,7 +100,7 @@ class CreateRequest {
   }
 
   Uint8List encode() {
-    final nameBytes = _encodeUtf16Le(fileName);
+    final nameBytes = encodeUtf16Le(fileName);
     // If name is empty, still need at least 1 byte for buffer
     final bufferLen = nameBytes.isEmpty ? 0 : nameBytes.length;
     final totalSize = _nameOffset + (bufferLen == 0 ? 1 : bufferLen);
@@ -126,16 +127,6 @@ class CreateRequest {
       body.setRange(_nameOffset, _nameOffset + nameBytes.length, nameBytes);
     }
     return body;
-  }
-
-  static Uint8List _encodeUtf16Le(String s) {
-    final units = s.codeUnits;
-    final bytes = Uint8List(units.length * 2);
-    final bd = ByteData.sublistView(bytes);
-    for (int i = 0; i < units.length; i++) {
-      bd.setUint16(i * 2, units[i], Endian.little);
-    }
-    return bytes;
   }
 }
 
