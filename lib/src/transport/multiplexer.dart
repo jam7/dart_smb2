@@ -136,21 +136,24 @@ class Smb2Multiplexer {
 
         // A transport message may carry several compounded responses,
         // chained via NextCommand. Dispatch each by its own MessageId.
+        // A malformed chain means the MessageIds of the remaining
+        // sub-responses can't be located, so protocol sync is lost:
+        // throw to tear the connection down, which completes every
+        // pending request with an error instead of leaving the
+        // un-dispatched ones hanging until the caller's timeout.
         var offset = 0;
         while (true) {
           if (packet.length - offset < Smb2Header.size) {
-            _log.warning('Compound response truncated at offset $offset '
-                '(packet: ${packet.length} bytes)');
-            break;
+            throw FormatException('Compound response truncated at offset '
+                '$offset (packet: ${packet.length} bytes)');
           }
           final header = Smb2Header.decode(packet, offset);
           final next = header.nextCommand;
           final end = next > 0 ? offset + next : packet.length;
           if (next > 0 &&
               (end > packet.length || next < Smb2Header.size)) {
-            _log.warning('Invalid NextCommand=$next at offset $offset '
-                '(packet: ${packet.length} bytes)');
-            break;
+            throw FormatException('Invalid NextCommand=$next at offset '
+                '$offset (packet: ${packet.length} bytes)');
           }
           final body =
               Uint8List.sublistView(packet, offset + Smb2Header.size, end);
@@ -165,6 +168,14 @@ class Smb2Multiplexer {
       }
     } finally {
       _running = false;
+      // Close the transport so the socket doesn't linger when the loop
+      // exits on a protocol error (desync). Idempotent: no-op when stop()
+      // or the peer already closed it.
+      try {
+        await _connection.close();
+      } catch (e, st) {
+        _log.warning('Connection close error: $e', e, st);
+      }
       // Complete all pending requests with error so callers don't hang.
       // This covers both error (connection lost) and normal exit (stop).
       if (_pending.isNotEmpty || _budgetWaiters.isNotEmpty) {

@@ -235,12 +235,17 @@ class Smb2Tree {
     final createResp = await createFuture;
     _checkStatus(createResp, 'Open file "$normalizedPath"');
 
+    // Same check order as Smb2FileReader._readOnce: reject error statuses
+    // before the empty-body check, so a header-only error response throws
+    // instead of being returned as zero bytes.
     final readResp = await readFuture;
+    if (readResp.header.status != NtStatus.endOfFile) {
+      _checkStatus(readResp, 'Read "$normalizedPath" at offset $offset');
+    }
     if (readResp.header.status == NtStatus.endOfFile ||
         readResp.body.isEmpty) {
       return Uint8List(0);
     }
-    _checkStatus(readResp, 'Read "$normalizedPath" at offset $offset');
     return ReadResponse.decode(readResp.body).data;
   }
 

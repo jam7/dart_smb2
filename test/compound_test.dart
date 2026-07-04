@@ -166,6 +166,50 @@ void main() {
       expect(data, isEmpty);
     });
 
+    test('error Read response with empty body throws instead of '
+        'returning zero bytes', () async {
+      conn.onSend = (header, body) {
+        switch (header.command) {
+          case Smb2Command.create:
+            conn.pushResponse(responseHeader(header), _createResponseBody());
+          case Smb2Command.read:
+            // Header-only error reply: error status, no body payload.
+            conn.pushResponse(
+                responseHeader(header, status: NtStatus.accessDenied),
+                Uint8List(0));
+          case Smb2Command.close:
+            conn.pushResponse(responseHeader(header), Uint8List(60));
+        }
+      };
+      expect(
+        () => tree().readRange('f.bin', offset: 0, length: 3),
+        throwsA(isA<Smb2Exception>()
+            .having((e) => e.status, 'status', NtStatus.accessDenied)),
+      );
+      await pumpEventQueue();
+    });
+
+    test('malformed compound chain fails all pending requests instead of '
+        'hanging', () async {
+      conn.onSend = (header, body) {
+        if (header.command == Smb2Command.create) {
+          // Reply with an invalid NextCommand (< header size): the chain
+          // can't be walked, so protocol sync is lost.
+          final resp = responseHeader(header);
+          resp.nextCommand = 3;
+          conn.pushResponse(resp, _createResponseBody());
+        }
+      };
+      await expectLater(
+        tree().readRange('f.bin', offset: 0, length: 3),
+        throwsA(isA<Smb2Exception>()),
+      );
+      await pumpEventQueue();
+      // The receive loop tore the connection down; nothing is left pending.
+      expect(mux.isRunning, isFalse);
+      expect(conn.isClosed, isTrue);
+    });
+
     test('ranges above maxReadSize use the non-compound path', () async {
       // maxReadSize=8, length=20: expect a plain Create (no related flag,
       // NextCommand=0) followed by split reads and a close.
