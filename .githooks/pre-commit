@@ -1,0 +1,5 @@
+#!/bin/sh
+# Block private data from entering the history of this public repository.
+# See tools/check-private.py. Enable with:
+#   git config core.hooksPath .githooks
+exec python3 "$(git rev-parse --show-toplevel)/tools/check-private.py" --staged
