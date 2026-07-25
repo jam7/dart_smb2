@@ -38,7 +38,7 @@ class TestEnv {
     if (missing.isNotEmpty) {
       throw StateError(
         'Missing required environment variables: ${missing.join(', ')}\n'
-        'Usage: SMB_HOST=192.168.1.100 SMB_SHARE=photos SMB_USER=user SMB_PASS=pass '
+        'Usage: SMB_HOST=192.168.99.100 SMB_SHARE=photos SMB_USER=user SMB_PASS=pass '
         'dart test --tags integration',
       );
     }

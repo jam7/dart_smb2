@@ -19,7 +19,7 @@ import 'env.dart';
 ///   SMB_BENCH_MAX_FILES  - max files to read from directory (default: 20)
 ///
 /// Example:
-///   SMB_HOST=192.168.1.100 SMB_SHARE=photos SMB_USER=user SMB_PASS=xxx \
+///   SMB_HOST=192.168.99.100 SMB_SHARE=photos SMB_USER=user SMB_PASS=xxx \
 ///     SMB_BENCH_FILE="photo.png" SMB_BENCH_READAHEAD=5 \
 ///     dart test --reporter expanded test/integration/benchmark_test.dart
 void main() {

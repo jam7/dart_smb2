@@ -68,7 +68,7 @@ import 'package:dart_smb2/dart_smb2.dart';
 
 // Connect and authenticate
 final client = await Smb2Client.connect(
-  host: '192.168.1.100',
+  host: '192.168.99.100',
   username: 'user',
   password: 'pass',
 );
@@ -148,7 +148,7 @@ dart test
 
 # Integration tests (requires a real SMB server)
 export PASS="your_password"
-SMB_HOST=192.168.1.100 SMB_SHARE=photos SMB_USER=user SMB_PASS="$PASS" \
+SMB_HOST=192.168.99.100 SMB_SHARE=photos SMB_USER=user SMB_PASS="$PASS" \
   dart test --reporter expanded test/integration/
 ```
 
@@ -170,12 +170,12 @@ Measure single-file and parallel download throughput with different read-ahead a
 export PASS="your_password"
 
 # Single file: compares readAhead=1,2,3,5,8
-SMB_HOST=192.168.1.100 SMB_SHARE=photos SMB_USER=user SMB_PASS="$PASS" \
+SMB_HOST=192.168.99.100 SMB_SHARE=photos SMB_USER=user SMB_PASS="$PASS" \
   SMB_BENCH_FILE="path/to/large_file.png" \
   dart test --reporter expanded test/integration/benchmark_test.dart
 
 # Directory: compares parallel=1,2,3,5,8
-SMB_HOST=192.168.1.100 SMB_SHARE=photos SMB_USER=user SMB_PASS="$PASS" \
+SMB_HOST=192.168.99.100 SMB_SHARE=photos SMB_USER=user SMB_PASS="$PASS" \
   SMB_BENCH_DIR="path/to/directory" \
   dart test --reporter expanded test/integration/benchmark_test.dart
 ```
