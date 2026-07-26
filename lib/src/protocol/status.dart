@@ -6,6 +6,9 @@ class NtStatus {
   static const int noSuchFile = 0xC000000F;
   static const int endOfFile = 0xC0000011;
   static const int accessDenied = 0xC0000022;
+  /// Returned when a directory is opened with CreateOptions.nonDirectoryFile,
+  /// i.e. when something is read as a file and turns out to be a folder.
+  static const int fileIsADirectory = 0xC00000BA;
   static const int objectNameNotFound = 0xC0000034;
   static const int objectNameCollision = 0xC0000035;
   static const int logonFailure = 0xC000006D;
@@ -29,6 +32,7 @@ class NtStatus {
       case noMoreFiles: return 'STATUS_NO_MORE_FILES';
       case endOfFile: return 'STATUS_END_OF_FILE';
       case accessDenied: return 'STATUS_ACCESS_DENIED';
+      case fileIsADirectory: return 'STATUS_FILE_IS_A_DIRECTORY';
       case logonFailure: return 'STATUS_LOGON_FAILURE';
       case badNetworkName: return 'STATUS_BAD_NETWORK_NAME';
       case objectNameNotFound: return 'STATUS_OBJECT_NAME_NOT_FOUND';
