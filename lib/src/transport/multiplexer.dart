@@ -176,25 +176,33 @@ class Smb2Multiplexer {
       } catch (e, st) {
         _log.warning('Connection close error: $e', e, st);
       }
-      // Complete all pending requests with error so callers don't hang.
-      // This covers both error (connection lost) and normal exit (stop).
-      if (_pending.isNotEmpty || _budgetWaiters.isNotEmpty) {
-        final error = Smb2Exception(0, 'Connection closed');
-        for (final pending in _pending.values) {
-          if (!pending.completer.isCompleted) {
-            pending.completer.completeError(error);
-          }
-        }
-        _pending.clear();
-        for (final waiter in _budgetWaiters) {
-          if (!waiter.isCompleted) {
-            waiter.completeError(error);
-          }
-        }
-        _budgetWaiters.clear();
-      }
+      _failEveryoneWaiting();
       _stopCompleter?.complete();
     }
+  }
+
+  /// Nobody is left waiting on a multiplexer that has stopped.
+  ///
+  /// Two kinds wait: a request that was sent and will now never be answered,
+  /// and a send held back for credit that will now never be granted. Both have
+  /// to be told, and this is the only place that tells them — a caller whose
+  /// completer is quietly dropped waits for its own timeout, or forever if it
+  /// has none. Runs on the way out whether that is an error or a stop().
+  void _failEveryoneWaiting() {
+    if (_pending.isEmpty && _budgetWaiters.isEmpty) return;
+    final error = Smb2Exception(0, 'Connection closed');
+    for (final pending in _pending.values) {
+      if (!pending.completer.isCompleted) {
+        pending.completer.completeError(error);
+      }
+    }
+    _pending.clear();
+    for (final waiter in _budgetWaiters) {
+      if (!waiter.isCompleted) {
+        waiter.completeError(error);
+      }
+    }
+    _budgetWaiters.clear();
   }
 
   void _dispatchResponse(Smb2Header header, Uint8List body) {

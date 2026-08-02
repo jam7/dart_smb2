@@ -75,6 +75,35 @@ void main() {
       expect(bd.getUint32(8, Endian.little), 3);
     });
 
+    test('the six security buffers tile the payload, in order', () {
+      // A Type3 message is a fixed 72-byte header of (Len, MaxLen, Offset)
+      // triples followed by the payload they point into. Getting one offset
+      // wrong is not a crash here -- it is a server that rejects the login,
+      // which looks like a wrong password.
+      final auth = NtlmAuth(
+        username: 'testuser',
+        password: 'testpass',
+        domain: 'WORKGROUP',
+        workstation: 'BOX',
+      );
+
+      final type3 = auth.createType3Message(_buildMinimalType2());
+
+      final bd = ByteData.sublistView(type3);
+      var expected = 72; // where the payload starts
+      for (var i = 0; i < 6; i++) {
+        final at = 12 + i * 8;
+        final len = bd.getUint16(at, Endian.little);
+        final maxLen = bd.getUint16(at + 2, Endian.little);
+        final offset = bd.getUint32(at + 4, Endian.little);
+        expect(maxLen, len, reason: 'buffer $i');
+        if (len == 0) continue;
+        expect(offset, expected, reason: 'buffer $i starts where $i-1 ended');
+        expected += len;
+      }
+      expect(expected, type3.length, reason: 'payload has no gap or tail');
+    });
+
     test('Type3 contains non-empty LM and NT responses', () {
       final type2 = _buildMinimalType2();
       final auth = NtlmAuth(

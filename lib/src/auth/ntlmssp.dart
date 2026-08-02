@@ -39,16 +39,9 @@ class NtlmAuth {
         _flagNtlm2 |
         _flagVersion;
     msg.addUint32(flags);
-    // DomainNameFields (Len, MaxLen, Offset) - empty
-    msg.addUint16(0); // Len
-    msg.addUint16(0); // MaxLen
-    msg.addUint32(0); // Offset
-    // WorkstationFields - empty
-    msg.addUint16(0);
-    msg.addUint16(0);
-    msg.addUint32(0);
-    // Version (8 bytes): Windows 6.1, build 0, NTLMSSP revision 15
-    msg.addBytes(Uint8List.fromList([6, 1, 0, 0, 0, 0, 0, 15]));
+    msg.addSecurityBuffer(0, 0); // DomainNameFields - empty
+    msg.addSecurityBuffer(0, 0); // WorkstationFields - empty
+    msg.addBytes(_version);
 
     return msg.build();
   }
@@ -56,36 +49,24 @@ class NtlmAuth {
   /// Parse Type2 (Challenge) message and generate Type3 (Authenticate).
   Uint8List createType3Message(Uint8List type2Bytes) {
     final type2 = _Type2Message.parse(type2Bytes);
-    final random = Random.secure();
-    final clientChallenge = Uint8List(8);
-    for (int i = 0; i < 8; i++) {
-      clientChallenge[i] = random.nextInt(256);
-    }
+    final clientChallenge = _randomBytes(8);
 
     // Compute NTLMv2 response
     final ntHash = _computeNtHash(password);
     final responseKeyNT = computeResponseKeyNT(ntHash, username, domain);
 
-    // Get timestamp from AV pairs, or use current time
-    int timestamp;
-    final avTimestamp = type2.findAvPair(0x0007); // MsvAvTimestamp
-    if (avTimestamp != null && avTimestamp.length == 8) {
-      final bd = ByteData.sublistView(avTimestamp);
-      timestamp = bd.getUint32(0, Endian.little) |
-          (bd.getUint32(4, Endian.little) << 32);
-    } else {
-      // Convert current time to FILETIME (100ns intervals since 1601-01-01)
-      final now = DateTime.now().toUtc();
-      final epoch = DateTime.utc(1601, 1, 1);
-      timestamp = now.difference(epoch).inMicroseconds * 10;
-    }
+    // The server's own clock if it sent one, so a skewed client does not fail
+    // the timestamp check.
+    final avTimestamp = type2.findAvPair(_avTimestamp);
+    final timestamp = avTimestamp != null && avTimestamp.length == 8
+        ? _readUint64Le(ByteData.sublistView(avTimestamp), 0)
+        : _filetimeNow();
 
+    final blob = _clientBlob(timestamp, clientChallenge, type2.targetInfo);
     final ntlmv2Response = _computeNtlmV2Response(
       responseKeyNT,
       type2.serverChallenge,
-      clientChallenge,
-      timestamp,
-      type2.targetInfo,
+      blob,
     );
 
     // LMv2 response
@@ -123,43 +104,17 @@ class NtlmAuth {
     msg.addBytes(_ntlmsspSignature);
     msg.addUint32(3); // MessageType = 3
 
-    // LmChallengeResponseFields
-    msg.addUint16(lmv2Response.length);
-    msg.addUint16(lmv2Response.length);
-    msg.addUint32(lmOffset);
+    msg.addSecurityBuffer(lmv2Response.length, lmOffset);
+    msg.addSecurityBuffer(ntlmv2Response.length, ntOffset);
+    msg.addSecurityBuffer(domainBytes.length, domainOffset);
+    msg.addSecurityBuffer(userBytes.length, userOffset);
+    msg.addSecurityBuffer(workstationBytes.length, workstationOffset);
+    msg.addSecurityBuffer(0, 0); // EncryptedRandomSessionKey - empty for now
 
-    // NtChallengeResponseFields
-    msg.addUint16(ntlmv2Response.length);
-    msg.addUint16(ntlmv2Response.length);
-    msg.addUint32(ntOffset);
-
-    // DomainNameFields
-    msg.addUint16(domainBytes.length);
-    msg.addUint16(domainBytes.length);
-    msg.addUint32(domainOffset);
-
-    // UserNameFields
-    msg.addUint16(userBytes.length);
-    msg.addUint16(userBytes.length);
-    msg.addUint32(userOffset);
-
-    // WorkstationFields
-    msg.addUint16(workstationBytes.length);
-    msg.addUint16(workstationBytes.length);
-    msg.addUint32(workstationOffset);
-
-    // EncryptedRandomSessionKeyFields (empty for now)
-    msg.addUint16(0);
-    msg.addUint16(0);
-    msg.addUint32(0);
-
-    // NegotiateFlags
     msg.addUint32(flags);
+    msg.addBytes(_version);
 
-    // Version
-    msg.addBytes(Uint8List.fromList([6, 1, 0, 0, 0, 0, 0, 15]));
-
-    // Payload
+    // Payload, in the order the buffers above point at it
     msg.addBytes(lmv2Response);
     msg.addBytes(ntlmv2Response);
     msg.addBytes(domainBytes);
@@ -188,15 +143,13 @@ class NtlmAuth {
     return Uint8List.fromList(digest.bytes);
   }
 
-  /// Compute NTLMv2 response.
-  static Uint8List _computeNtlmV2Response(
-    Uint8List responseKeyNT,
-    Uint8List serverChallenge,
-    Uint8List clientChallenge,
+  /// The blob the NTLMv2 response is computed over and then carries: what
+  /// this client contributed to the exchange, in the layout the spec gives.
+  static Uint8List _clientBlob(
     int timestamp,
+    Uint8List clientChallenge,
     Uint8List? avPairs,
   ) {
-    // Build client blob
     final avPairsLen = avPairs?.length ?? 0;
     final blob = Uint8List(28 + avPairsLen + 4);
     final bd = ByteData.sublistView(blob);
@@ -205,32 +158,28 @@ class NtlmAuth {
     bd.setUint32(0, 0x00000101, Endian.little);
     // Reserved = 0
     bd.setUint32(4, 0, Endian.little);
-    // TimeStamp (FILETIME)
-    bd.setUint32(8, timestamp & 0xFFFFFFFF, Endian.little);
-    bd.setUint32(12, (timestamp >> 32) & 0xFFFFFFFF, Endian.little);
-    // ClientChallenge
+    _writeUint64Le(bd, 8, timestamp);
     blob.setRange(16, 24, clientChallenge);
     // Reserved = 0
     bd.setUint32(24, 0, Endian.little);
-    // AvPairs
     if (avPairs != null) {
       blob.setRange(28, 28 + avPairsLen, avPairs);
     }
     // Trailing 4 zero bytes
     bd.setUint32(28 + avPairsLen, 0, Endian.little);
+    return blob;
+  }
 
-    // NTProofStr = HMAC-MD5(ResponseKeyNT, ServerChallenge + Blob)
-    final hmac = hash.Hmac(hash.md5, responseKeyNT);
-    final input = Uint8List(serverChallenge.length + blob.length);
-    input.setRange(0, serverChallenge.length, serverChallenge);
-    input.setRange(serverChallenge.length, input.length, blob);
-    final ntProofStr = Uint8List.fromList(hmac.convert(input).bytes);
-
-    // NTLMv2 Response = NTProofStr + Blob
-    final result = Uint8List(ntProofStr.length + blob.length);
-    result.setRange(0, ntProofStr.length, ntProofStr);
-    result.setRange(ntProofStr.length, result.length, blob);
-    return result;
+  /// Compute NTLMv2 response: proof that we hold the key, plus the blob the
+  /// proof was taken over so the server can repeat the calculation.
+  static Uint8List _computeNtlmV2Response(
+    Uint8List responseKeyNT,
+    Uint8List serverChallenge,
+    Uint8List blob,
+  ) {
+    final ntProofStr =
+        _hmacMd5(responseKeyNT, _concat(serverChallenge, blob));
+    return _concat(ntProofStr, blob);
   }
 
   /// Compute LMv2 response.
@@ -239,25 +188,50 @@ class NtlmAuth {
     Uint8List serverChallenge,
     Uint8List clientChallenge,
   ) {
-    final hmac = hash.Hmac(hash.md5, responseKeyNT);
-    final input = Uint8List(serverChallenge.length + clientChallenge.length);
-    input.setRange(0, serverChallenge.length, serverChallenge);
-    input.setRange(serverChallenge.length, input.length, clientChallenge);
-    final mac = Uint8List.fromList(hmac.convert(input).bytes);
-
-    final result = Uint8List(24);
-    result.setRange(0, 16, mac);
-    result.setRange(16, 24, clientChallenge);
-    return result;
+    final mac =
+        _hmacMd5(responseKeyNT, _concat(serverChallenge, clientChallenge));
+    return _concat(mac, clientChallenge); // 16 + 8 = the fixed 24 bytes
   }
 
   /// Compute session base key = HMAC-MD5(ResponseKeyNT, NTProofStr).
   /// Used in Phase 2 for session signing.
   // ignore: unused_element
   static Uint8List _computeSessionBaseKey(Uint8List responseKeyNT, Uint8List ntlmv2Response) {
-    final ntProofStr = ntlmv2Response.sublist(0, 16);
-    final hmac = hash.Hmac(hash.md5, responseKeyNT);
-    return Uint8List.fromList(hmac.convert(ntProofStr).bytes);
+    return _hmacMd5(responseKeyNT, ntlmv2Response.sublist(0, 16));
+  }
+
+  static Uint8List _hmacMd5(Uint8List key, Uint8List data) =>
+      Uint8List.fromList(hash.Hmac(hash.md5, key).convert(data).bytes);
+
+  static Uint8List _concat(Uint8List a, Uint8List b) {
+    final result = Uint8List(a.length + b.length);
+    result.setRange(0, a.length, a);
+    result.setRange(a.length, result.length, b);
+    return result;
+  }
+
+  static Uint8List _randomBytes(int length) {
+    final random = Random.secure();
+    return Uint8List.fromList(
+        List.generate(length, (_) => random.nextInt(256)));
+  }
+
+  /// Read and write 64-bit values as two 32-bit halves: [ByteData]'s 64-bit
+  /// accessors throw on the web, where there is no 64-bit integer.
+  static int _readUint64Le(ByteData bd, int offset) =>
+      bd.getUint32(offset, Endian.little) |
+      (bd.getUint32(offset + 4, Endian.little) << 32);
+
+  static void _writeUint64Le(ByteData bd, int offset, int value) {
+    bd.setUint32(offset, value & 0xFFFFFFFF, Endian.little);
+    bd.setUint32(offset + 4, (value >> 32) & 0xFFFFFFFF, Endian.little);
+  }
+
+  /// Now as a FILETIME: 100ns intervals since 1601-01-01.
+  static int _filetimeNow() {
+    final now = DateTime.now().toUtc();
+    final epoch = DateTime.utc(1601, 1, 1);
+    return now.difference(epoch).inMicroseconds * 10;
   }
 
   static Uint8List _encodeUtf16Le(String s) {
@@ -274,6 +248,12 @@ class NtlmAuth {
   static final _ntlmsspSignature = Uint8List.fromList(
     [0x4E, 0x54, 0x4C, 0x4D, 0x53, 0x53, 0x50, 0x00],
   );
+
+  // Version (8 bytes): Windows 6.1, build 0, NTLMSSP revision 15
+  static final _version = Uint8List.fromList([6, 1, 0, 0, 0, 0, 0, 15]);
+
+  // AV pair ids
+  static const _avTimestamp = 0x0007; // MsvAvTimestamp
 
   // Negotiate flags
   static const _flagUnicode = 0x00000001;
@@ -373,6 +353,17 @@ class _NtlmMessageBuilder {
   final _bytes = <int>[];
 
   void addBytes(Uint8List data) => _bytes.addAll(data);
+
+  /// A (Len, MaxLen, Offset) triple: how every variable-length part of an
+  /// NTLMSSP message is pointed at from the fixed header. MaxLen is what the
+  /// field could hold and Len what it does; nothing here ever reserves spare
+  /// room, so the two are the same.
+  void addSecurityBuffer(int length, int offset) {
+    addUint16(length);
+    addUint16(length);
+    addUint32(offset);
+  }
+
   void addUint16(int value) {
     _bytes.add(value & 0xFF);
     _bytes.add((value >> 8) & 0xFF);
