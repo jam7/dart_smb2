@@ -88,7 +88,7 @@ class Smb2Tree {
       treeId: _treeId,
     );
     final createResp = await _sender.send(createHeader, createReq.encode());
-    _checkStatus(createResp, 'Open directory "$normalizedPath"');
+    createResp.checkStatus('Open directory "$normalizedPath"');
     final createResult = CreateResponse.decode(createResp.body);
     final fileId = createResult.fileId;
 
@@ -115,7 +115,7 @@ class Smb2Tree {
         if (queryResp.header.status == NtStatus.noMoreFiles) {
           break;
         }
-        _checkStatus(queryResp, 'QueryDirectory "$normalizedPath"');
+        queryResp.checkStatus('QueryDirectory "$normalizedPath"');
 
         final dirEntries = QueryDirectoryResponse.decode(queryResp.body);
         for (final entry in dirEntries) {
@@ -159,7 +159,7 @@ class Smb2Tree {
       treeId: _treeId,
     );
     final createResp = await _sender.send(createHeader, createReq.encode());
-    _checkStatus(createResp, 'Open file "$normalizedPath"');
+    createResp.checkStatus('Open file "$normalizedPath"');
     final createResult = CreateResponse.decode(createResp.body);
 
     return Smb2FileReader(
@@ -226,22 +226,17 @@ class Smb2Tree {
     // If Create fails below, the Read/Close responses (error replies from
     // the server) must still be consumed without unhandled async errors.
     readFuture.ignore();
-    closeFuture.then<void>(
-      (_) {},
-      onError: (Object e, StackTrace st) =>
-          _log.warning('Close error: $e', e, st),
-    );
+    unawaited(ignoringOutcome(closeFuture, 'Close', _log));
 
     final createResp = await createFuture;
-    _checkStatus(createResp, 'Open file "$normalizedPath"');
+    createResp.checkStatus('Open file "$normalizedPath"');
 
     // Same check order as Smb2FileReader._readOnce: reject error statuses
     // before the empty-body check, so a header-only error response throws
     // instead of being returned as zero bytes.
     final readResp = await readFuture;
-    if (readResp.header.status != NtStatus.endOfFile) {
-      _checkStatus(readResp, 'Read "$normalizedPath" at offset $offset');
-    }
+    readResp.checkStatus('Read "$normalizedPath" at offset $offset',
+        allow: NtStatus.endOfFile);
     if (readResp.header.status == NtStatus.endOfFile ||
         readResp.body.isEmpty) {
       return Uint8List(0);
@@ -269,11 +264,8 @@ class Smb2Tree {
       sessionId: _sessionId,
       treeId: _treeId,
     );
-    _sender.send(closeHeader, closeReq.encode()).then<void>(
-      (_) {},
-      onError: (Object e, StackTrace st) =>
-          _log.warning('Close file error: $e', e, st),
-    );
+    unawaited(ignoringOutcome(
+        _sender.send(closeHeader, closeReq.encode()), 'Close file', _log));
   }
 
   String _normalizePath(String path) {
@@ -287,15 +279,6 @@ class Smb2Tree {
     return p;
   }
 
-  void _checkStatus(Smb2Response response, String operation) {
-    if (NtStatus.isError(response.header.status)) {
-      throw Smb2Exception(
-        response.header.status,
-        '$operation failed: ${NtStatus.describe(response.header.status)}',
-        response.header,
-      );
-    }
-  }
 }
 
 /// SMB2 client with true message multiplexing.
@@ -379,13 +362,7 @@ class Smb2Client {
     final req = NegotiateRequest();
     final header = req.buildHeader();
     final response = await _sender.send(header, req.encode());
-
-    if (NtStatus.isError(response.header.status)) {
-      throw Smb2Exception(
-        response.header.status,
-        'Negotiate failed: ${NtStatus.describe(response.header.status)}',
-      );
-    }
+    response.checkStatus('Negotiate');
 
     final negotiateResp = NegotiateResponse.decode(response.body);
     _dialectRevision = negotiateResp.dialectRevision;
@@ -416,15 +393,10 @@ class Smb2Client {
     final setupReq1 = SessionSetupRequest(securityBuffer: spnegoType1);
     final header1 = setupReq1.buildHeader();
     final response1 = await _sender.send(header1, setupReq1.encode());
-
-    if (response1.header.status != NtStatus.moreProcessingRequired) {
-      if (NtStatus.isError(response1.header.status)) {
-        throw Smb2Exception(
-          response1.header.status,
-          'Session setup step 1 failed: ${NtStatus.describe(response1.header.status)}',
-        );
-      }
-    }
+    // The server answering "more processing required" is the handshake
+    // working: it is asking for the Type3 that step 2 sends.
+    response1.checkStatus('Session setup step 1',
+        allow: NtStatus.moreProcessingRequired);
 
     _sessionId = response1.header.sessionId;
     final setupResp1 = SessionSetupResponse.decode(response1.body);
@@ -439,13 +411,7 @@ class Smb2Client {
     final setupReq2 = SessionSetupRequest(securityBuffer: spnegoType3);
     final header2 = setupReq2.buildHeader(sessionId: _sessionId);
     final response2 = await _sender.send(header2, setupReq2.encode());
-
-    if (NtStatus.isError(response2.header.status)) {
-      throw Smb2Exception(
-        response2.header.status,
-        'Authentication failed: ${NtStatus.describe(response2.header.status)}',
-      );
-    }
+    response2.checkStatus('Authentication');
 
     _log.info('Authenticated as "$username", sessionId=0x${_sessionId.toRadixString(16)}');
   }
@@ -456,13 +422,7 @@ class Smb2Client {
     final req = TreeConnectRequest(path: path);
     final header = req.buildHeader(sessionId: _sessionId);
     final response = await _sender.send(header, req.encode());
-
-    if (NtStatus.isError(response.header.status)) {
-      throw Smb2Exception(
-        response.header.status,
-        'Tree connect to "$shareName" failed: ${NtStatus.describe(response.header.status)}',
-      );
-    }
+    response.checkStatus('Tree connect to "$shareName"');
 
     final treeId = response.header.treeId;
     final treeResp = TreeConnectResponse.decode(response.body);
@@ -486,11 +446,8 @@ class Smb2Client {
   Future<void> disconnectTree(Smb2Tree tree) async {
     final req = TreeDisconnectRequest();
     final header = req.buildHeader(sessionId: _sessionId, treeId: tree.treeId);
-    try {
-      await _sender.send(header, req.encode());
-    } catch (e, st) {
-      _log.warning('Tree disconnect error: $e', e, st);
-    }
+    await ignoringOutcome(
+        _sender.send(header, req.encode()), 'Tree disconnect', _log);
     _trees.remove(tree);
   }
 
@@ -502,17 +459,13 @@ class Smb2Client {
     }
 
     // Logoff
-    try {
-      final header = Smb2Header(
-        command: Smb2Command.logoff,
-        sessionId: _sessionId,
-      );
-      final body = Uint8List(4);
-      ByteData.sublistView(body).setUint16(0, 4, Endian.little); // StructureSize
-      await _sender.send(header, body);
-    } catch (e, st) {
-      _log.warning('Logoff error: $e', e, st);
-    }
+    final header = Smb2Header(
+      command: Smb2Command.logoff,
+      sessionId: _sessionId,
+    );
+    final body = Uint8List(4);
+    ByteData.sublistView(body).setUint16(0, 4, Endian.little); // StructureSize
+    await ignoringOutcome(_sender.send(header, body), 'Logoff', _log);
 
     await _multiplexer.stop();
     _log.info('Disconnected');

@@ -53,11 +53,8 @@ class Smb2FileReader {
     // The error handler is attached synchronously, so a failure (error
     // response or connection loss) is logged instead of becoming an
     // unhandled async error.
-    _sender.send(header, req.encode()).then<void>(
-      (_) {},
-      onError: (Object e, StackTrace st) =>
-          _log.warning('Close error: $e', e, st),
-    );
+    unawaited(ignoringOutcome(_sender.send(header, req.encode()), 'Close',
+        _log));
   }
 
   /// Read a range of bytes from the file.
@@ -135,13 +132,10 @@ class Smb2FileReader {
     final header = req.buildHeader(sessionId: _sessionId, treeId: _treeId);
     final response = await _sender.send(header, req.encode());
 
-    if (NtStatus.isError(response.header.status) &&
-        response.header.status != NtStatus.endOfFile) {
-      throw Smb2Exception(
-        response.header.status,
-        'Read failed at offset $offset',
-      );
-    }
+    // Reject error statuses before the empty-body check, so a header-only
+    // error response throws instead of being returned as zero bytes.
+    response.checkStatus('Read at offset $offset',
+        allow: NtStatus.endOfFile);
 
     if (response.header.status == NtStatus.endOfFile || response.body.isEmpty) {
       return Uint8List(0);

@@ -21,6 +21,44 @@ class Smb2Response {
   final Uint8List body; // Everything after the 64-byte header
 
   Smb2Response(this.header, this.body);
+
+  /// Throw unless the server reported success.
+  ///
+  /// [allow] is a status that the protocol calls an error and this exchange
+  /// does not: the "more to come" of a session setup, the end of file of a
+  /// read past the end. Without somewhere to say that, five callers wrote
+  /// their own version of this check, and each one that did forgot to carry
+  /// the header — which is the part that says which request failed.
+  ///
+  /// Not every send is checked. The ones that are not are teardown, and say
+  /// so by name; see `_ignoringOutcome` in the client.
+  void checkStatus(String operation, {int? allow}) {
+    final status = header.status;
+    if (allow != null && status == allow) return;
+    if (!NtStatus.isError(status)) return;
+    throw Smb2Exception(
+      status,
+      '$operation failed: ${NtStatus.describe(status)}',
+      header,
+    );
+  }
+}
+
+/// Await the closing half of an exchange: a response whose status changes
+/// nothing, because there is nothing left to do with the thing being closed.
+///
+/// The status is deliberately not read, and the name is how that is said out
+/// loud. A send with neither this nor [Smb2Response.checkStatus] beside it is
+/// an unexamined answer, which used to take counting the two against each
+/// other to notice. [what] names the operation for the log; [log] is the
+/// caller's, so the line still says which layer it came from.
+Future<void> ignoringOutcome(
+    Future<Smb2Response> response, String what, Logger log) async {
+  try {
+    await response;
+  } catch (e, st) {
+    log.warning('$what error: $e', e, st);
+  }
 }
 
 /// Exception thrown for SMB2 protocol errors.
