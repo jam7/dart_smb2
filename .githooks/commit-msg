@@ -1,0 +1,33 @@
+#!/bin/sh
+# A subject line that says "did A, and also B" is usually two commits, and the
+# author has just said so. This warns; it does not block.
+#
+# Blocking would be wrong here. Nothing can tell whether two changes are
+# logically independent -- only the author knows -- and mixing without writing
+# "and" is unbounded, so a gate that passes would only give false confidence.
+# The value is the question arriving at the moment the answer is still cheap:
+# the commit is not made yet, and `git reset` is not needed to split it.
+#
+# `, and` rather than `and`: a subject that lists nouns ("Update README for
+# coding-rules and the coupling tools") is one change, and the comma is what
+# separates that from a second verb phrase. Measured over this repository's
+# history, the comma form matched every real mix and nothing else.
+#
+# This file is a copy. The original, and the install.sh that placed and
+# updates it, live in https://github.com/jam7/ai-dev-gates
+subject=$(sed -n '1p' "$1")
+
+case "$subject" in
+    *", and "*|*", also "*|*"; also "*|*"、また"*|*"し、ついでに"*)
+        echo >&2
+        echo "note: this subject reads as two changes:" >&2
+        echo "  $subject" >&2
+        echo >&2
+        echo "If they are independent, splitting now costs one 'git reset'." >&2
+        echo "Later it costs a history rewrite. If it really is one change," >&2
+        echo "rephrase the subject and carry on -- nothing is blocked." >&2
+        echo >&2
+        ;;
+esac
+
+exit 0

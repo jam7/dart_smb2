@@ -1,0 +1,41 @@
+# Vocabulary for test data and documentation examples.
+#
+# Some of what this project handles is not public; test data is therefore
+# *declared* rather than improvised. Anything that looks like content -- a path
+# with separators, a media filename, any CJK text -- has to be built from the
+# names below, and tools/check-private.py enforces it in the files matching its
+# data scope (test/ and docs/ by default).
+#
+# The point is the failure mode it catches. A denylist can only stop names
+# someone remembered to list; this stops the name nobody knew about, which is
+# the case that keeps slipping through -- test data gets written by copying
+# whatever was on screen in a log.
+#
+# Adding to this file is expected and cheap. What is not allowed is quietly
+# pasting a name off a real system. If a new name is needed, invent one and put
+# it here -- the declaration is the review.
+#
+# Delete this file to turn the vocabulary check off entirely; the structural
+# checks (home paths, private IPs, long numeric ids) keep running either way.
+#
+# Lines starting with ~ are regular expressions matched against a whole literal
+# or a single path segment. Everything else is an exact path segment or file
+# name. `#` starts a comment, at the start of a line or after a space.
+
+# -- invented path segments -------------------------------------------------
+example
+sample
+docs
+inner
+subdir
+a
+b
+c
+
+# -- invented file names ----------------------------------------------------
+sample.pdf
+example.zip
+
+# -- generated names, as regular expressions --------------------------------
+~^page\d+\.(png|jpe?g)$
+~^file\d+$

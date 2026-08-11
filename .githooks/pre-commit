@@ -1,5 +1,59 @@
 #!/bin/sh
-# Block private data from entering the history of this public repository.
-# See tools/check-private.py. Enable with:
-#   git config core.hooksPath .githooks
-exec python3 "$(git rev-parse --show-toplevel)/tools/check-private.py" --staged
+# Two gates, both of which exist because a rule written down was not enough.
+#
+# * check-private.py -- private data must not enter the history. Real paths
+#   leaked several times while the rule lived only in CLAUDE.md.
+# * check-metrics.py -- a new long function, deep nest, long parameter list or
+#   duplicated block has to be declared in tools/cq-baseline.txt with its
+#   reason. Written after a duplicate went in and was noticed only later, by a
+#   trend measurement taken after the push.
+#
+# Either script is skipped when it is not installed, so a project can take one
+# gate and not the other. Enable the hooks with:
+#   git config core.hooksPath .githooks   (install.sh --hooks does this)
+#
+# This file is a copy. The original, and the install.sh that placed and
+# updates it, live in https://github.com/jam7/ai-dev-gates
+#
+# Nothing project-specific belongs in this file. What each project measures
+# lives in tools/gate.conf, which install.sh creates and never overwrites, so
+# that updating the hooks cannot silently reset it.
+
+root=$(git rev-parse --show-toplevel)
+status=0
+
+ext=""           # extensions to measure; empty means every language
+scope=""         # directories to measure; empty means the repository
+extra_checks=""  # anything else this project wants run before a commit
+private_doc=""   # project document to point at when the private gate fires
+[ -f "$root/tools/gate.conf" ] && . "$root/tools/gate.conf"
+
+# Whether anything in this commit is in a language the structure check covers.
+staged_has_code() {
+    [ -z "$ext" ] && return 0
+    pattern=$(printf '%s' "$ext" | sed 's/\./\\./g; s/,/$|/g; s/$/$/')
+    git diff --cached --name-only --diff-filter=ACM | grep -qE "$pattern"
+}
+
+if [ -f "$root/tools/check-private.py" ]; then
+    if ! python3 "$root/tools/check-private.py" --staged; then
+        status=1
+        [ -n "$private_doc" ] && echo "see $private_doc" >&2
+    fi
+fi
+
+if [ -f "$root/tools/check-metrics.py" ] && staged_has_code; then
+    args=""
+    for d in $scope; do args="$args --scope $d"; done
+    [ -n "$ext" ] && args="$args --ext $ext"
+    # Measures the working tree rather than the index. Not the same thing when
+    # a change is half-staged, but it is the code that will be there after the
+    # commit, which is what the reason in the baseline has to be true of.
+    python3 "$root/tools/check-metrics.py" $args || status=1
+fi
+
+if [ -n "$extra_checks" ] && staged_has_code; then
+    ( cd "$root" && eval "$extra_checks" ) || status=1
+fi
+
+exit "$status"

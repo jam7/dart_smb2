@@ -1,18 +1,28 @@
 #!/bin/sh
 # The last chance to catch private data while it can still be removed.
+#
 # pre-commit sees one commit at a time, so something added and later deleted
-# survives in an intermediate revision and would be published anyway.
+# survives in an intermediate revision and would be published anyway -- that
+# is exactly how a real share path once slipped through. This checks every
+# revision being pushed, and their messages.
 #
 # Enable with: git config core.hooksPath .githooks
-set -e
+#
+# This file is a copy. The original, and the install.sh that placed and
+# updates it, live in https://github.com/jam7/ai-dev-gates
 root=$(git rev-parse --show-toplevel)
+[ -f "$root/tools/check-private.py" ] || exit 0
+
+private_doc=""   # project document to point at when this gate fires
+[ -f "$root/tools/gate.conf" ] && . "$root/tools/gate.conf"
+
 zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
 status=0
 
 while read -r _local_ref local_sha _remote_ref remote_sha; do
-    [ "$local_sha" = "$zero" ] && continue
+    [ "$local_sha" = "$zero" ] && continue   # deleting a branch
     if [ "$remote_sha" = "$zero" ]; then
-        range="$local_sha"
+        range="$local_sha"                   # new branch: its whole history
     else
         range="$remote_sha..$local_sha"
     fi
@@ -22,6 +32,7 @@ done
 if [ "$status" -ne 0 ]; then
     echo >&2
     echo "Nothing has been pushed. These revisions are still local, so the" >&2
-    echo "data can still be removed for good." >&2
+    echo "data can be removed for good." >&2
+    [ -n "$private_doc" ] && echo "see $private_doc" >&2
 fi
 exit "$status"

@@ -153,8 +153,10 @@ def main():
             problems += check_content(rev[:9] + ' (message)',
                                       git('log', '-1', '--format=%B', rev),
                                       denylist, historical=True)
-            changed = git('diff-tree', '-r', '--no-commit-id', '--name-only',
-                          '--diff-filter=ACMR', rev).split('\n')
+            # --root: without it a parentless commit diffs as empty, and the
+            # repository's first commit would never be scanned.
+            changed = git('diff-tree', '--root', '-r', '--no-commit-id',
+                          '--name-only', '--diff-filter=ACMR', rev).split('\n')
             for path in filter(None, changed):
                 if not SCAN_SCOPE.search(path):
                     continue

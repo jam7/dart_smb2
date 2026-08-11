@@ -1,0 +1,14 @@
+# Structural findings that are accepted, and why.
+#
+# tools/check-metrics.py fails a commit on anything cq-metrics.py reports that
+# is not listed here. A threshold alone cannot be the gate -- some findings
+# are deliberate -- so the gate is a declaration instead: adding the line is
+# the review.
+#
+# Before adding one, ask whether a helper would carry the repeated part
+# better. Keys come from check-metrics.py --list.
+
+# One procedure, holding a handle for its whole length. Splitting it adds
+# paths on which the release can be missed. (Judgement carried over from the
+# app repository's baseline, which measured this file before the split.)
+long lib/src/client.dart::listDirectory

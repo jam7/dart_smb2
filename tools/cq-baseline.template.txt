@@ -1,0 +1,34 @@
+# Structural findings that are accepted, and why.
+#
+# tools/check-metrics.py fails a commit on anything cq-metrics.py reports that
+# is not listed here. A threshold alone cannot be the gate -- some findings are
+# deliberate -- so the gate is a declaration instead: adding the line is the
+# review, and the reason beside it is what the next person reads.
+#
+# This file holds decisions, never a backlog. If you cannot write the reason,
+# the code wants fixing instead -- and if that is true of many of them, the
+# gate has been installed too early. Clean up with cq-review first and add the
+# hooks when the list is short enough to defend line by line; a file seeded
+# from `--list` is an ignore list, and a new finding will hide in it unseen.
+#
+# Before adding one, ask whether a helper would carry the repeated part without
+# breaking the layout. That is usually the answer for duplicates, and often the
+# answer for a long function that is long because two things live in it.
+#
+# Run `tools/check-metrics.py --list` to see the key for something new. Keys
+# carry no line numbers, so they survive edits:
+#
+#   long <path>::<function>      a function over the length threshold
+#   deep <path>::<function>      nesting over the depth threshold
+#   params <path>::<function>    parameter list over the count threshold
+#   dup <path-a>|<path-b>        a duplicated block between two files
+#
+# check-metrics.py also reports entries here that are no longer flagged. Those
+# are decisions still being defended for code that has changed shape -- delete
+# them, or the file becomes a place where old judgements hide.
+
+# Example (delete these):
+#
+# Byte-for-byte protocol work. Worth more laid out beside the spec than split:
+# the value is that the code and the RFC read in the same order.
+# long src/auth/ntlm.c::create_type3_message
