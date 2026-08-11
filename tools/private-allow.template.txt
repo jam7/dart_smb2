@@ -24,8 +24,9 @@
 #
 # This template is copied around, so its examples use the documentation
 # range (192.0.2.x), which no check flags. A real entry holds the actual
-# flagged value -- the real allow/vocabulary/denylist files are never
-# scanned, precisely so that declaring a value cannot itself be a leak.
+# flagged value -- safe to write, because the real allow file is the one
+# file the checker never scans (declaring a value must not block the
+# commit that declares it). The vocabulary and denylist stay scanned.
 #
 # Examples:
 #
