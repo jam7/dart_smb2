@@ -14,7 +14,11 @@ root=$(git rev-parse --show-toplevel)
 [ -f "$root/tools/check-private.py" ] || exit 0
 
 private_doc=""   # project document to point at when this gate fires
+private_args=""  # extra check-private.py options (scopes, denylist, allow)
 [ -f "$root/tools/gate.conf" ] && . "$root/tools/gate.conf"
+# set -f: $private_args is split into words on purpose, and a regex argument
+# like [A-Z] must not be glob-expanded against the filesystem.
+set -f
 
 zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
 status=0
@@ -26,7 +30,8 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
     else
         range="$remote_sha..$local_sha"
     fi
-    python3 "$root/tools/check-private.py" --range "$range" || status=1
+    python3 "$root/tools/check-private.py" --range "$range" $private_args \
+        || status=1
 done
 
 if [ "$status" -ne 0 ]; then

@@ -26,6 +26,7 @@ ext=""           # extensions to measure; empty means every language
 scope=""         # directories to measure; empty means the repository
 extra_checks=""  # anything else this project wants run before a commit
 private_doc=""   # project document to point at when the private gate fires
+private_args=""  # extra check-private.py options (scopes, denylist, allow)
 [ -f "$root/tools/gate.conf" ] && . "$root/tools/gate.conf"
 
 # Whether anything in this commit is in a language the structure check covers.
@@ -36,10 +37,14 @@ staged_has_code() {
 }
 
 if [ -f "$root/tools/check-private.py" ]; then
-    if ! python3 "$root/tools/check-private.py" --staged; then
+    # set -f: $private_args is split into words on purpose, and a regex
+    # argument like [A-Z] must not be glob-expanded against the filesystem.
+    set -f
+    if ! python3 "$root/tools/check-private.py" --staged $private_args; then
         status=1
         [ -n "$private_doc" ] && echo "see $private_doc" >&2
     fi
+    set +f
 fi
 
 if [ -f "$root/tools/check-metrics.py" ] && staged_has_code; then

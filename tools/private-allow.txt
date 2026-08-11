@@ -1,0 +1,33 @@
+# Deliberate exceptions the private-data check accepts, and why.
+# Format: tools/private-allow.template.txt. Writing the entry is the review.
+#
+# These entries carry the policy that used to be constants inside this
+# repository's own copy of check-private.py (EXAMPLE_HOST, HISTORICAL_HOSTS,
+# ALLOWED_SMB_VALUES), moved here 2026-08-11 when the checker was unified
+# with the ai-dev-gates original.
+
+# The one address examples may use. Chosen from a subnet the developer never
+# has on a LAN, so a real address pasted in by accident cannot pass for it.
+192.168.99.100
+
+# The example before it, invented too but inside the developer's own subnet.
+# It is still in the published history and cannot be taken back, so the audit
+# accepts it there -- and only there. New content must use 192.168.99.100,
+# which is the whole reason the address changed.
+historical: 192.168.1.100
+
+# Windows FILETIME epoch offset (100ns ticks from 1601 to 1970): a protocol
+# constant this library needs, not an id. The unified checker has a
+# long-numeric-id rule the old local checker did not.
+116444736000000000
+
+# Values the SMB_* examples may take. Anything else is assumed to be real:
+# `Movies` and `jam` were, and both are words a denylist would never have
+# thought to include. (192.168.99.100 also passes as SMB_HOST via the token
+# entry above.)
+key: SMB_HOST = localhost 127.0.0.1 $HOST $SMB_HOST
+key: SMB_SHARE = photos share $SHARE $SMB_SHARE
+key: SMB_USER = user $USER $SMB_USER
+key: SMB_PASS = pass xxx "$PASS" $PASS $SMB_PASS
+key: SMB_PORT = 445 $PORT $SMB_PORT
+key: SMB_BENCH_FILE = photo.png "photo.png" "path/to/large_file.png" $SMB_BENCH_FILE

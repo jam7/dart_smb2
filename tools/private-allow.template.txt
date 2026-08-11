@@ -1,0 +1,39 @@
+# Deliberate exceptions the private-data check accepts, and why. The same
+# shape as cq-baseline.txt: every entry carries its reason in a comment, and
+# writing the entry is the review. check-private.py reads this file when it
+# exists (tools/private-allow.txt, or --allow PATH).
+#
+# Three line forms:
+#
+#   TOKEN                  accepted everywhere. For things that only look
+#                          private: a protocol constant, the one address
+#                          examples are written with
+#   historical: TOKEN      accepted only in --range / --all-history scans.
+#                          For data that published history keeps (rewriting
+#                          would be force-push theater) but that new content
+#                          must not use -- the commit gate still blocks it
+#   key: NAME = V1 V2 ...  values that assignments to NAME may take, wherever
+#                          `NAME=value` appears in a scanned file. Anything
+#                          else is assumed real: leaked values are ordinary
+#                          words no denylist would predict. Keys not declared
+#                          here are not checked. A value that is an accepted
+#                          TOKEN also passes
+#
+# The denylist (notes/private-patterns.txt) is never silenced by this file:
+# a known private name is reported even if a matching token is declared here.
+#
+# This template is copied around, so its examples use the documentation
+# range (192.0.2.x), which no check flags. A real entry holds the actual
+# flagged value -- the real allow/vocabulary/denylist files are never
+# scanned, precisely so that declaring a value cannot itself be a leak.
+#
+# Examples:
+#
+#   # The one address examples may use; chosen from a subnet nobody here has.
+#   192.0.2.10
+#
+#   # The example address before it; the published history keeps it.
+#   historical: 192.0.2.99
+#
+#   # Connection examples in the README must use these placeholder values.
+#   key: DB_HOST = localhost 127.0.0.1 $DB_HOST

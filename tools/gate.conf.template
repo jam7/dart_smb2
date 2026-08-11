@@ -29,3 +29,10 @@ extra_checks=""
 #
 #   private_doc="docs/private-data.md"
 private_doc=""
+
+# Extra options for check-private.py, appended to both the pre-commit and
+# pre-push runs: --scan-scope / --data-scope / --denylist / --vocabulary /
+# --allow. Split on whitespace, so a regex argument must not contain spaces.
+#
+#   private_args="--denylist ../notes/private-patterns.txt --scan-scope \.(dart|md|ya?ml|sh|txt)$"
+private_args=""
