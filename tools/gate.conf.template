@@ -36,3 +36,8 @@ private_doc=""
 #
 #   private_args="--denylist ../notes/private-patterns.txt --scan-scope \.(dart|md|ya?ml|sh|txt)$"
 private_args=""
+
+# Extra options for check-refs.py (no commit hashes in tracking documents),
+# appended to the pre-commit run: --scope, --allow. Same whitespace rule as
+# private_args.
+refs_args=""

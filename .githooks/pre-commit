@@ -27,6 +27,7 @@ scope=""         # directories to measure; empty means the repository
 extra_checks=""  # anything else this project wants run before a commit
 private_doc=""   # project document to point at when the private gate fires
 private_args=""  # extra check-private.py options (scopes, denylist, allow)
+refs_args=""     # extra check-refs.py options (scope, allow)
 [ -f "$root/tools/gate.conf" ] && . "$root/tools/gate.conf"
 
 # Whether anything in this commit is in a language the structure check covers.
@@ -44,6 +45,12 @@ if [ -f "$root/tools/check-private.py" ]; then
         status=1
         [ -n "$private_doc" ] && echo "see $private_doc" >&2
     fi
+    set +f
+fi
+
+if [ -f "$root/tools/check-refs.py" ]; then
+    set -f
+    python3 "$root/tools/check-refs.py" --staged $refs_args || status=1
     set +f
 fi
 

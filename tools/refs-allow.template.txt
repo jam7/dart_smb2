@@ -1,0 +1,10 @@
+# Hex tokens check-refs.py accepts in tracking documents, and why. One token
+# per line, the reason in a comment above it -- the same contract as
+# cq-baseline.txt: writing the entry is the review. Do not let this file
+# grow into an ignore list; a commit reference belongs here never, it gets
+# rewritten as the commit's subject instead (rules/40-references.md).
+#
+# Example:
+#
+#   # The SHA-256 of the published tarball, part of the release record.
+#   3b1f2a9c
