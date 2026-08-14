@@ -238,10 +238,29 @@ SMB_HOST=192.168.99.100 SMB_SHARE=photos SMB_USER=user SMB_PASS="$PASS" \
 | `SMB_BENCH_PARALLEL` | 3 | Parallel download count |
 | `SMB_BENCH_MAX_FILES` | 20 | Max files to read from directory |
 
+## Scope: reading a home share quickly
+
+This library exists to read files off a NAS on a home network as fast as the
+network allows. Everything in it is shaped by that: range reads instead of
+downloads, a receive loop that dispatches by MessageId so reads can overlap,
+and read-ahead sized by measurement.
+
+**Security is taken to be the network's.** The client and the server are on
+the same LAN, and a share reachable from the internet is not a target. That is
+a deliberate limit, not an omission waiting to be filled.
+
+So **message signing and SMB3 encryption are not implemented and are not
+planned**. Both put work on every message -- a keyed hash over the payload, or
+a cipher over it -- which is precisely the cost this library was written to
+avoid. A setting that needs them needs a different client.
+
+The client currently advertises `SMB2_NEGOTIATE_SIGNING_ENABLED` while not
+signing anything, which is a mistake and is being corrected; a server that
+*requires* signing will not work here either way.
+
 ## Phase 2 (planned)
 
 - Write, file creation, delete, rename
-- SMB3 encryption & signing
 - Multi-channel
 
 ## License
