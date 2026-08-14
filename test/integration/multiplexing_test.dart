@@ -1,3 +1,16 @@
+// ignore_for_file: avoid_print
+//
+// print is the output of this file, not a leftover from debugging it. An
+// integration run reports what it found -- which server, how many files, how
+// fast -- and `dart test` shows exactly that. Routing it through
+// package:logging would put a handler in the middle whose only job is to
+// print it again.
+//
+// The ban this suspends (CLAUDE.md, avoid_print) is about the library and the
+// app, where output has one sink and it is configured elsewhere. It still
+// applies there, which is why this is declared per file rather than turned
+// off for the package.
+
 @Tags(['integration'])
 library;
 
