@@ -28,7 +28,26 @@ extra_checks=""  # anything else this project wants run before a commit
 private_doc=""   # project document to point at when the private gate fires
 private_args=""  # extra check-private.py options (scopes, denylist, allow)
 refs_args=""     # extra check-refs.py options (scope, allow)
+trace_args=""    # trace-matrix arguments; empty leaves the trace gate off
+embedded_repos="" # gitlinks this project keeps on purpose (space separated)
 [ -f "$root/tools/gate.conf" ] && . "$root/tools/gate.conf"
+
+# `git add -A` silently stages a gitlink (mode 160000) for any repository
+# nested in the tree -- a private notes/ repo, typically. Measured at three
+# times in one day on a real project, and the stray line survives review.
+for link in $(git diff --cached --raw | awk -F'\t' '$1 ~ / 160000 / { print $2 }'); do
+    case " $embedded_repos " in
+        *" $link "*) ;;
+        *)
+            status=1
+            echo "error: '$link' is staged as a gitlink (an embedded repository)." >&2
+            echo "If this is an accident (git add -A does it silently), remove it:" >&2
+            echo "  git rm -f --cached $link" >&2
+            echo "If this project tracks it on purpose, declare it in" >&2
+            echo "tools/gate.conf: embedded_repos=\"$link\"" >&2
+            ;;
+    esac
+done
 
 # Whether anything in this commit is in a language the structure check covers.
 staged_has_code() {
@@ -51,6 +70,12 @@ fi
 if [ -f "$root/tools/check-refs.py" ]; then
     set -f
     python3 "$root/tools/check-refs.py" --staged $refs_args || status=1
+    set +f
+fi
+
+if [ -f "$root/tools/check-trace.py" ] && [ -n "$trace_args" ]; then
+    set -f
+    python3 "$root/tools/check-trace.py" --gate $trace_args || status=1
     set +f
 fi
 

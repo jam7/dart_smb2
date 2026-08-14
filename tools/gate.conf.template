@@ -41,3 +41,21 @@ private_args=""
 # appended to the pre-commit run: --scope, --allow. Same whitespace rule as
 # private_args.
 refs_args=""
+
+# Arguments for the trace-matrix commit gate (spec-dev documents vs code and
+# tests). Empty leaves this gate off. When set, any commit touching the named
+# paths re-checks the whole matrix -- the invariant is relational, so a
+# partial check would miss exactly what the last one missed -- and the
+# commit that breaks it is the one that gets told. Enable only once the
+# matrix is currently green (fix or retire the breakage first).
+#
+#   trace_args="--code lib --code test docs/"
+trace_args=""
+
+# Embedded repositories this project tracks as gitlinks on purpose
+# (submodule-style commit pointers), space separated. Any other staged
+# gitlink -- the `git add -A` accident with a nested private repo --
+# blocks the commit.
+#
+#   embedded_repos="dart_smb2"
+embedded_repos=""
