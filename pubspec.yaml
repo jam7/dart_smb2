@@ -10,6 +10,9 @@ dependencies:
   logging: ^1.2.0
   pointycastle: ^4.0.0
   asn1lib: ^1.5.0
+  # For @visibleForTesting in the NTLM code. Resolved transitively until now,
+  # which works here and need not work for whoever depends on this package.
+  meta: ^1.15.0
 
 dev_dependencies:
   test: ^1.24.0
