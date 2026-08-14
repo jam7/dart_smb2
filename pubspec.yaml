@@ -13,3 +13,6 @@ dependencies:
 
 dev_dependencies:
   test: ^1.24.0
+  # Virtual clock for the request-expiry tests: a real 60-second wait is not
+  # a test, and a shortened real one is a race on a busy machine.
+  fake_async: ^1.3.0

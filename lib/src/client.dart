@@ -295,6 +295,11 @@ class Smb2Tree {
 /// await client.disconnect();
 /// ```
 class Smb2Client {
+  /// How long to wait to reach the server's port. Nothing has been agreed
+  /// yet, so there is nothing to lose by giving up early and everything to
+  /// lose by waiting out the operating system's default.
+  static const defaultConnectTimeout = Duration(seconds: 15);
+
   static final _log = Logger('Smb2Client');
   final Smb2Multiplexer _multiplexer;
   final Smb2Sender _sender;
@@ -322,15 +327,25 @@ class Smb2Client {
   bool get isConnected => _multiplexer.isRunning;
 
   /// Connect to an SMB2 server and authenticate.
+  ///
+  /// [connectTimeout] bounds reaching the port; [requestTimeout] bounds one
+  /// request waiting for its response, and running out of it closes the
+  /// connection (see the README's Timeouts section). Null for either waits
+  /// forever. Both are named so that a caller who wants the defaults writes
+  /// nothing, which is most of them.
   static Future<Smb2Client> connect({
     required String host,
     required String username,
     required String password,
     String domain = '',
     int port = 445,
+    Duration? connectTimeout = defaultConnectTimeout,
+    Duration? requestTimeout = Smb2Multiplexer.defaultRequestTimeout,
   }) async {
-    final connection = await Smb2Connection.connect(host, port: port);
-    final multiplexer = Smb2Multiplexer(connection);
+    final connection =
+        await Smb2Connection.connect(host, port: port, timeout: connectTimeout);
+    final multiplexer =
+        Smb2Multiplexer(connection, requestTimeout: requestTimeout);
     final sender = Smb2Sender(connection, multiplexer);
     final client = Smb2Client._(
       multiplexer: multiplexer,

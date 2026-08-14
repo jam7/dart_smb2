@@ -128,6 +128,56 @@ readAhead=3:
 
 SMB2 uses a credit system: the server grants credits in each response, and the client must not send more requests than it has credits for. Instead of tracking individual credits (which requires careful bookkeeping), dart_smb2 caps the number of concurrent in-flight requests at 32 (configurable). Since servers typically grant 32 credits per response, this keeps the client well within budget while being simple to reason about.
 
+## Extending the API without rewriting its callers
+
+Two changes are foreseen, and both have a shape that costs callers nothing and
+a shape that breaks every one of them. Written down because the choice arrives
+long after the reasoning does.
+
+**Telling the caller the server said it is busy.** An SMB2 server can answer a
+slow request with an interim `STATUS_PENDING` before the real response; the
+client extends its own deadline (see Timeouts) but nothing above hears about
+it. When that is worth surfacing, add it as an **optional named argument on
+the operation** — `listDirectory(path, {void Function()? onServerBusy})` —
+rather than as a callback registered on the client.
+
+Registering on the client is equally additive, and is the wrong shape: a
+single connection carries many concurrent operations, so a connection-wide
+callback can say that *something* is busy and never which one. Whoever wants
+to say so on screen, or to extend their own patience, needs to know which
+request it belongs to. The per-call argument carries that for free.
+
+**Returning a directory as it arrives.** `listDirectory` makes one round trip
+per bufferful and returns nothing until the last one lands, so a large
+directory is silent for its whole duration. The fix is to yield entries as
+they arrive — and doing that by changing this method's return type to a
+`Stream` would break every `await tree.listDirectory(...)` in existence.
+
+**Add a second method instead** (`streamDirectory`, say) and leave
+`listDirectory` as the thin wrapper that collects it. Adding a method is
+invisible to callers; changing what one returns is not.
+
+## Timeouts
+
+The client bounds three things, following [MS-SMB2]'s Request Expiration
+Timer and the values Windows ships:
+
+| | default | what it bounds |
+|---|---|---|
+| `connectTimeout` | 15s | reaching the server's TCP port |
+| `requestTimeout` | 60s | one request waiting for its response |
+| (derived) | 4 × `requestTimeout` | a request the server answered with `STATUS_PENDING` |
+
+Sixty seconds is Windows' `SessTimeout`, and the fourfold extension for a
+pending request is what Windows does when `ExtendedSessTimeout` is not
+configured.
+
+**Expiry closes the connection**, which is what the specification calls for:
+the operation is considered blocked, and once a response is missing there is
+no way to know what the server still believes about MessageIds and credits.
+Every request waiting on that connection fails with a reason. Callers are
+expected to reconnect; nothing here retries by itself.
+
 ## Phase 1 (current)
 
 - TCP connection (port 445)

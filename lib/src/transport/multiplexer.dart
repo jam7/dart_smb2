@@ -12,7 +12,17 @@ class _PendingRequest {
   final Completer<Smb2Response> completer;
   final DateTime createdAt;
 
+  /// Fires if the response does not arrive in time. Null where no deadline
+  /// was configured. Replaced when the server says it is still working, so
+  /// the field is not final.
+  Timer? expiry;
+
   _PendingRequest(this.completer) : createdAt = DateTime.now();
+
+  void stopWaiting() {
+    expiry?.cancel();
+    expiry = null;
+  }
 }
 
 /// A decoded SMB2 response.
@@ -74,6 +84,23 @@ class Smb2Exception implements Exception {
       'Smb2Exception: $message (${NtStatus.describe(status)})';
 }
 
+/// The server did not answer a request in time.
+///
+/// A subclass so that whoever already catches [Smb2Exception] keeps catching
+/// everything this library throws; the separate type is for callers who want
+/// to say "the server went quiet" rather than "the server refused".
+///
+/// There is no status: the server said nothing, which is the whole point.
+class Smb2TimeoutException extends Smb2Exception {
+  final Duration waited;
+
+  Smb2TimeoutException(this.waited, int messageId)
+      : super(0, 'No response to request $messageId after ${waited.inSeconds}s');
+
+  @override
+  String toString() => 'Smb2TimeoutException: $message';
+}
+
 /// Manages MessageId-based multiplexing of SMB2 requests/responses.
 ///
 /// - Each outgoing request is assigned a unique MessageId
@@ -83,9 +110,23 @@ class Smb2Exception implements Exception {
 ///   [tryReserveBudget] / [waitForBudget] to prevent credit exhaustion
 ///   and server overload
 class Smb2Multiplexer {
+  /// How long Windows waits for a response before deciding the operation is
+  /// blocked (its `SessTimeout`), and how much longer it waits once the
+  /// server has answered with STATUS_PENDING (four times, the default when
+  /// `ExtendedSessTimeout` is unset). Both from [MS-SMB2] and the timeouts
+  /// Windows ships; matching them means a server tuned for real clients is
+  /// tuned for this one.
+  static const defaultRequestTimeout = Duration(seconds: 60);
+  static const _pendingExtension = 4;
+
   static final _log = Logger('Smb2Multiplexer');
   final Smb2Connection _connection;
   final int maxInflight;
+
+  /// How long one request may wait. Null waits forever, which is what this
+  /// did before the timer existed; tests use a short one.
+  final Duration? requestTimeout;
+
   final Map<int, _PendingRequest> _pending = {};
   int _nextMessageId = 0;
   int _availableCredits = 1; // Start with 1, server grants more
@@ -93,7 +134,11 @@ class Smb2Multiplexer {
   Completer<void>? _stopCompleter;
   final List<Completer<void>> _budgetWaiters = [];
 
-  Smb2Multiplexer(this._connection, {this.maxInflight = 32});
+  Smb2Multiplexer(
+    this._connection, {
+    this.maxInflight = 32,
+    this.requestTimeout = defaultRequestTimeout,
+  });
 
   int get availableCredits => _availableCredits;
   bool get isRunning => _running;
@@ -111,8 +156,41 @@ class Smb2Multiplexer {
   Future<Smb2Response> registerRequest(int messageId) {
     _checkRunning();
     final completer = Completer<Smb2Response>();
-    _pending[messageId] = _PendingRequest(completer);
+    final request = _PendingRequest(completer);
+    _pending[messageId] = request;
+    _startWaiting(messageId, request, requestTimeout);
     return completer.future;
+  }
+
+  void _startWaiting(int messageId, _PendingRequest request, Duration? limit) {
+    request.expiry?.cancel();
+    if (limit == null) return;
+    request.expiry = Timer(limit, () => _giveUpOn(messageId, limit));
+  }
+
+  /// The server never answered [messageId]. Fail it, and take the connection
+  /// down with it.
+  ///
+  /// Tearing down is what [MS-SMB2] asks for and what Windows does: the
+  /// operation is considered blocked, and a missing response leaves no way to
+  /// know what the server still believes about MessageIds and credits.
+  /// Guessing at that is worse than starting again — a credit returned that
+  /// the server never granted is a client that oversends, which is how a
+  /// connection dies later and somewhere else.
+  ///
+  /// Closing the transport ends the receive loop, whose exit path tells
+  /// everyone else waiting. Only the request that ran out of time is
+  /// completed here, so that it alone reports the reason.
+  void _giveUpOn(int messageId, Duration waited) {
+    final request = _pending.remove(messageId);
+    if (request == null) return;
+    request.stopWaiting();
+    _log.severe('No response to MessageId=$messageId after '
+        '${waited.inSeconds}s; closing the connection');
+    if (!request.completer.isCompleted) {
+      request.completer.completeError(Smb2TimeoutException(waited, messageId));
+    }
+    unawaited(_connection.close());
   }
 
   /// Try to reserve send budget: [slots] in-flight slots plus
@@ -230,6 +308,7 @@ class Smb2Multiplexer {
     if (_pending.isEmpty && _budgetWaiters.isEmpty) return;
     final error = Smb2Exception(0, 'Connection closed');
     for (final pending in _pending.values) {
+      pending.stopWaiting();
       if (!pending.completer.isCompleted) {
         pending.completer.completeError(error);
       }
@@ -251,13 +330,25 @@ class Smb2Multiplexer {
 
     // STATUS_PENDING: don't complete yet, wait for real response.
     // The interim response still carries a credit grant.
+    //
+    // It also buys the server time. This is the server saying it is working
+    // on the request rather than ignoring it, so waiting on is now the
+    // correct thing to do and the deadline moves out (4x, as Windows does).
+    // Without this, a slow but healthy server -- a large directory on a
+    // spinning disk -- would have its connection cut while it was answering.
     if (header.status == NtStatus.pending) {
+      final waiting = _pending[header.messageId];
+      if (waiting != null && requestTimeout != null) {
+        _startWaiting(
+            header.messageId, waiting, requestTimeout! * _pendingExtension);
+      }
       _notifyBudgetWaiters();
       return;
     }
 
     final pending = _pending.remove(header.messageId);
     if (pending != null) {
+      pending.stopWaiting();
       pending.completer.complete(Smb2Response(header, body));
     } else {
       _log.warning('Unexpected response for MessageId=${header.messageId}');

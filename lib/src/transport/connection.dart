@@ -40,8 +40,14 @@ class Smb2Connection {
   bool get isClosed => _closed;
 
   /// Connect to [host]:[port] (default 445).
-  static Future<Smb2Connection> connect(String host, {int port = 445}) async {
-    final socket = await Socket.connect(host, port);
+  ///
+  /// [timeout] bounds reaching the port, and nothing after it. A host that is
+  /// off, or an address with nothing listening on a network that drops rather
+  /// than refuses, otherwise waits on the operating system's own patience,
+  /// which is measured in minutes.
+  static Future<Smb2Connection> connect(String host,
+      {int port = 445, Duration? timeout}) async {
+    final socket = await Socket.connect(host, port, timeout: timeout);
     socket.setOption(SocketOption.tcpNoDelay, true);
     return Smb2Connection._(socket, socket.add, () async {
       await socket.close();
