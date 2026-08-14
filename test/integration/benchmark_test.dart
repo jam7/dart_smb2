@@ -28,12 +28,12 @@ void main() {
     return;
   }
 
-  final _env = Platform.environment;
-  final benchFile = _env['SMB_BENCH_FILE'];
-  final benchDir = _env['SMB_BENCH_DIR'];
-  final readAhead = int.tryParse(_env['SMB_BENCH_READAHEAD'] ?? '') ?? 3;
-  final parallel = int.tryParse(_env['SMB_BENCH_PARALLEL'] ?? '') ?? 3;
-  final maxFiles = int.tryParse(_env['SMB_BENCH_MAX_FILES'] ?? '') ?? 20;
+  final processEnv = Platform.environment;
+  final benchFile = processEnv['SMB_BENCH_FILE'];
+  final benchDir = processEnv['SMB_BENCH_DIR'];
+  final readAhead = int.tryParse(processEnv['SMB_BENCH_READAHEAD'] ?? '') ?? 3;
+  final parallel = int.tryParse(processEnv['SMB_BENCH_PARALLEL'] ?? '') ?? 3;
+  final maxFiles = int.tryParse(processEnv['SMB_BENCH_MAX_FILES'] ?? '') ?? 20;
 
   late TestEnv env;
   late Smb2Client client;
