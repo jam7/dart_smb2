@@ -52,11 +52,9 @@ class Smb2Response {
     final status = header.status;
     if (allow != null && status == allow) return;
     if (!NtStatus.isError(status)) return;
-    throw Smb2Exception(
-      status,
-      '$operation failed: ${NtStatus.describe(status)}',
-      header,
-    );
+    // The status name is not put in here: toString appends it, and having
+    // both produced "failed: STATUS_ACCESS_DENIED (STATUS_ACCESS_DENIED)".
+    throw Smb2Exception(status, '$operation failed', header);
   }
 }
 
