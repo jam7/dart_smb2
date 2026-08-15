@@ -1,6 +1,7 @@
 # SMB2 Protocol Implementation Status
 
-dart_smb2 is a read-only SMB 2.0/2.1 client library for Dart.
+dart_smb2 is an SMB 2.0/2.1 client library for Dart. It reads, and it can
+create a file that is not there yet; it cannot overwrite, rename or delete.
 The full Negotiate → Authentication → TreeConnect → QueryDirectory → Create → Read path is implemented, with message multiplexing and read-ahead pipelining for optimized throughput.
 
 ## Implemented
@@ -37,6 +38,7 @@ The full Negotiate → Authentication → TreeConnect → QueryDirectory → Cre
 | Create | Implemented | Open files and directories (read access) |
 | Close | Implemented | |
 | Read | Implemented | Multi-block, read-ahead pipelining (readStream) and parallel split reads (readRange), up to 1MB/block |
+| Write | Implemented | New files only (FILE_CREATE). Split at 1MB/block, sent one at a time, and a block the server takes only part of is sent again from where it stopped |
 
 ### Directory Operations
 
@@ -71,14 +73,13 @@ The full Negotiate → Authentication → TreeConnect → QueryDirectory → Cre
 
 ## Not Implemented
 
-### Write Operations
+### Write Operations not implemented
 
 | Command | Notes |
 |---|---|
-| Write | Read-only library by design |
-| Flush | Same |
-| Lock | Same |
-| SetInfo | File attribute modification |
+| Flush | Not needed yet: a write is acknowledged by the server before it is counted |
+| Lock | No caller has wanted one |
+| SetInfo | Rename, delete and attribute changes. The next stage but one -- see `docs/write/` |
 
 ### Security
 
@@ -110,6 +111,6 @@ The full Negotiate → Authentication → TreeConnect → QueryDirectory → Cre
 | Automatic share enumeration | Named Pipes + SRVSVC RPC |
 | Connecting to servers requiring signing | Message Signing |
 | Active Directory environments | Kerberos authentication |
-| File write / delete | Write, SetInfo |
+| Replacing or deleting a file | SetInfo (rename, delete) |
 | Following symbolic links | Reparse Points, Ioctl |
 | Secure connections over VPN | SMB3 Encryption |

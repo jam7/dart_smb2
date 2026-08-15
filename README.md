@@ -85,6 +85,13 @@ await for (final chunk in reader.readStream()) {
   // process chunk
 }
 
+// Write a new file. Fails if the name is taken: there is no way from here
+// to write over a file that already exists.
+final writer = await tree.createNew('/vacation/notes.txt');
+await writer.write(bytes);          // split for the server's limit
+await writer.close();               // waits, and reports a failure
+print('${writer.written} bytes reached the server');
+
 // Parallel reads (true multiplexing)
 final futures = files
     .where((f) => !f.isDirectory)
@@ -197,6 +204,7 @@ expected to reconnect; nothing here retries by itself.
 - QueryDirectory (file listing)
 - Close
 - MessageId-based multiplexing
+- Write, for files that are not there yet (see above)
 
 ## Testing
 
@@ -219,6 +227,8 @@ Integration tests are skipped automatically when `SMB_HOST` is not set.
 | `SMB_USER` | yes | Username |
 | `SMB_PASS` | yes | Password |
 | `SMB_PORT` | no | Port (default: 445) |
+| `SMB_WRITE_DIR` | no | A directory the write tests may create files in. Without it they skip rather than write somewhere unexpected. They do not clean up after themselves, since deleting is not implemented |
+| `SMB_LIST_DIR` | no | Which directory the listing-cost test measures (default: the share's root) |
 
 ## Benchmark
 
@@ -271,9 +281,21 @@ is allowed to notice.
 
 A server that *requires* signing will not work here, whatever we send.
 
+## What writing does and does not do
+
+`createNew` puts a file on the share that was not there before. Nothing in
+this library overwrites, renames or deletes, so no call it offers can destroy
+a file that already exists -- refusing a taken name is the server's own answer
+to FILE_CREATE, not a check this library makes and could get wrong.
+
+A caller who wants to replace a file therefore cannot yet. The stages after
+this one are, in order: making writes faster, then rename and delete (which is
+what lets a caller write under another name and swap it in), then editing an
+existing file. See `docs/write/` for the reasoning.
+
 ## Phase 2 (planned)
 
-- Write, file creation, delete, rename
+- Rename and delete
 - Multi-channel
 
 ## License
