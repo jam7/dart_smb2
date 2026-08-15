@@ -84,8 +84,8 @@ The full Negotiate → Authentication → TreeConnect → QueryDirectory → Cre
 
 | Feature | Notes |
 |---|---|
-| Message Signing | Header has signature field but not computed. Session key derivation code exists |
-| SMB3 Encryption | AES-CCM/GCM |
+| Message Signing | Not computed, and not planned (see the README's Scope section). The header has the field and the session key derivation exists. Requests carry `SMB2_NEGOTIATE_SIGNING_ENABLED` because [MS-SMB2] 3.2.4.2.2.2 requires a client that does not *require* signing to set it, and 2.2.3 / 2.2.5 require the server to ignore it. A server that *requires* signing announces it in its NEGOTIATE response, which this client does not yet read |
+| SMB3 Encryption | AES-CCM/GCM. Not planned, same reason |
 | Kerberos | NTLMv2 only. Kerberos preferred for Active Directory environments |
 
 ### Advanced Protocol Features
