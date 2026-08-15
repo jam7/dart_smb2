@@ -3,6 +3,10 @@ import 'dart:io';
 /// Returns true if SMB_HOST is set (i.e. integration tests should run).
 bool get hasIntegrationEnv => Platform.environment['SMB_HOST']?.isNotEmpty == true;
 
+/// Returns true if a directory has been set aside for tests that write.
+bool get hasWriteDir =>
+    Platform.environment['SMB_WRITE_DIR']?.isNotEmpty == true;
+
 /// Read required SMB connection settings from environment variables.
 /// Fails with a clear message if any are missing.
 class TestEnv {
@@ -51,6 +55,16 @@ class TestEnv {
       port: port,
     );
   }
+
+  /// Where the write tests may create files. Guarded by [hasWriteDir], which
+  /// is what those tests check before they run: a test that writes should
+  /// skip rather than guess at a directory on somebody's share.
+  String get writeDir => Platform.environment['SMB_WRITE_DIR']!;
+
+  /// Tells one run's files from the last one's. Files are left behind for
+  /// now (deleting them needs an operation this stage does not have), so
+  /// without this a second run would collide with the first.
+  String get runTag => pid.toString();
 
   /// Which directory a test that needs a big one should list.
   ///
