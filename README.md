@@ -254,9 +254,14 @@ planned**. Both put work on every message -- a keyed hash over the payload, or
 a cipher over it -- which is precisely the cost this library was written to
 avoid. A setting that needs them needs a different client.
 
-The client currently advertises `SMB2_NEGOTIATE_SIGNING_ENABLED` while not
-signing anything, which is a mistake and is being corrected; a server that
-*requires* signing will not work here either way.
+The client sends `SMB2_NEGOTIATE_SIGNING_ENABLED` while signing nothing, which
+looks like a claim it cannot back. It is not one, and it is not optional:
+[MS-SMB2] defines that bit with "The server MUST ignore this bit" (2.2.3 and
+2.2.5), and 3.2.4.2.2.2 requires a client that does not itself *require*
+signing to set it. Sending 0 would break a MUST and change nothing the server
+is allowed to notice.
+
+A server that *requires* signing will not work here, whatever we send.
 
 ## Phase 2 (planned)
 
