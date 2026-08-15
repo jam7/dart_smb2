@@ -16,6 +16,11 @@ adding a line and saying why, and writing that line is the review.
 
 It also reports baseline entries that no longer appear. Those are decisions
 being defended for code that has changed shape, and they go stale quietly.
+"No longer appears" has two very different causes, and they are reported
+apart: a function that measures under the threshold now is an improvement,
+but a function the analyzer cannot find at all may be a parser gap -- and
+advising "remove the line" for those once deleted a live 73-line
+declaration when a wrapped Dart signature stopped being parsed.
 
 Keys ignore line numbers, since those shift under every edit:
 
@@ -109,6 +114,47 @@ def measure(script, root, scopes, ext):
     return parse_keys(done.stdout)
 
 
+def functions_seen(script, root, paths):
+    """Every path::function the analyzer finds in [paths], flagged or not.
+
+    Thresholds at their minimum turn the run into an inventory: the deep and
+    params sections list every function, including empty ones.
+    """
+    cmd = [sys.executable, script, '--max-func-lines', '0', '--max-nest', '-1',
+           '--max-params', '-1', '--dup-window', '0', '--top', '100000']
+    done = subprocess.run(cmd + paths, cwd=root, capture_output=True,
+                          text=True, check=True)
+    return {key.split(' ', 1)[1] for key in parse_keys(done.stdout)}
+
+
+def split_gone(gone, script, root):
+    """Split stale keys into (resolved, unseen).
+
+    A resolved flag names a function the analyzer still sees, so measuring
+    under the threshold is a real improvement. An unseen one means the
+    function itself was not found: a deletion, a rename, or a parser gap --
+    the report must not present those as improvements. A key whose file is
+    gone is resolved (the code is gone with it), and dup keys name file
+    pairs, not functions, so they cannot be told apart and stay resolved.
+    """
+    targets, resolved = {}, []
+    for key in gone:
+        category, _, ref = key.partition(' ')
+        if category in ('long', 'deep', 'params') and '::' in ref \
+                and os.path.isfile(os.path.join(root, ref.split('::', 1)[0])):
+            targets.setdefault(ref.split('::', 1)[0], []).append(key)
+        else:
+            resolved.append(key)
+    if not targets:
+        return sorted(resolved), []
+    seen = functions_seen(script, root, sorted(targets))
+    unseen = [key for keys in targets.values() for key in keys
+              if key.split(' ', 1)[1] not in seen]
+    resolved += [key for keys in targets.values() for key in keys
+                 if key.split(' ', 1)[1] in seen]
+    return sorted(resolved), sorted(unseen)
+
+
 def baseline_keys(path):
     if not os.path.exists(path):
         return set()
@@ -121,16 +167,24 @@ def baseline_keys(path):
     return keys
 
 
-def report(current, declared, baseline_name):
+def report(current, resolved, unseen, new, baseline_name):
     """Print what is undeclared and what is stale. Returns the exit status."""
-    new = sorted(k for k in current if k not in declared)
-    gone = sorted(k for k in declared if k not in current)
-
-    if gone:
+    if resolved:
         print('No longer flagged -- remove these from %s:' % baseline_name,
               file=sys.stderr)
-        for key in gone:
+        for key in resolved:
             print('  %s' % key, file=sys.stderr)
+        print(file=sys.stderr)
+
+    if unseen:
+        print('Declared, but the function itself is not seen by the '
+              'analyzer:', file=sys.stderr)
+        for key in unseen:
+            print('  %s' % key, file=sys.stderr)
+        print('If it was deleted or renamed, remove the line from %s. If the '
+              'code is still\nthere, this is a measurement gap, not an '
+              'improvement: keep the line and report\nthe parser miss.'
+              % baseline_name, file=sys.stderr)
         print(file=sys.stderr)
 
     if not new:
@@ -190,7 +244,11 @@ def main():
     baseline = args.baseline
     if not os.path.isabs(baseline):
         baseline = os.path.join(root, baseline)
-    return report(current, baseline_keys(baseline), args.baseline)
+    declared = baseline_keys(baseline)
+    resolved, unseen = split_gone(
+        sorted(k for k in declared if k not in current), script, root)
+    new = sorted(k for k in current if k not in declared)
+    return report(current, resolved, unseen, new, args.baseline)
 
 
 if __name__ == '__main__':
