@@ -148,10 +148,18 @@ to say so on screen, or to extend their own patience, needs to know which
 request it belongs to. The per-call argument carries that for free.
 
 **Returning a directory as it arrives.** `listDirectory` makes one round trip
-per bufferful and returns nothing until the last one lands, so a large
-directory is silent for its whole duration. The fix is to yield entries as
-they arrive — and doing that by changing this method's return type to a
-`Stream` would break every `await tree.listDirectory(...)` in existence.
+per bufferful and returns nothing until the last one lands, so a directory
+large enough to need several would be silent for its whole duration. Measured
+rather than assumed, that size is far off: one round trip asks for
+`maxTransactSize`, which negotiates to 1MB against a NAS here and holds
+several thousand entries, and a listing of 492 took two round trips and 26ms
+— one for the entries, one to be told there are no more. Nothing has been
+built for this, and nothing should be until a share has a directory that
+shows the fault.
+
+Were it needed, the fix would be to yield entries as they arrive — and doing
+that by changing this method's return type to a `Stream` would break every
+`await tree.listDirectory(...)` in existence.
 
 **Add a second method instead** (`streamDirectory`, say) and leave
 `listDirectory` as the thin wrapper that collects it. Adding a method is
