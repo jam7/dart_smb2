@@ -228,6 +228,7 @@ Integration tests are skipped automatically when `SMB_HOST` is not set.
 | `SMB_PASS` | yes | Password |
 | `SMB_PORT` | no | Port (default: 445) |
 | `SMB_WRITE_DIR` | no | A directory the write tests may create files in. Without it they skip rather than write somewhere unexpected. They do not clean up after themselves, since deleting is not implemented |
+| `SMB_BENCH_WRITE_MB` | no | How large a file the write benchmark creates (default: 64) |
 | `SMB_LIST_DIR` | no | Which directory the listing-cost test measures (default: the share's root) |
 
 ## Benchmark

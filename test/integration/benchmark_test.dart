@@ -15,6 +15,7 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:dart_smb2/dart_smb2.dart';
@@ -30,6 +31,9 @@ import 'env.dart';
 ///   SMB_BENCH_READAHEAD  - read-ahead count for streaming (default: 3)
 ///   SMB_BENCH_PARALLEL   - parallel download count (default: 3)
 ///   SMB_BENCH_MAX_FILES  - max files to read from directory (default: 20)
+///   SMB_BENCH_WRITE_MB   - size of the file the write benchmark creates
+///                          (default: 64). Needs SMB_WRITE_DIR, and leaves the
+///                          file behind: deleting is not implemented yet
 ///
 /// Example:
 ///   SMB_HOST=192.168.99.100 SMB_SHARE=photos SMB_USER=user SMB_PASS=xxx \
@@ -47,6 +51,8 @@ void main() {
   final readAhead = int.tryParse(processEnv['SMB_BENCH_READAHEAD'] ?? '') ?? 3;
   final parallel = int.tryParse(processEnv['SMB_BENCH_PARALLEL'] ?? '') ?? 3;
   final maxFiles = int.tryParse(processEnv['SMB_BENCH_MAX_FILES'] ?? '') ?? 20;
+  final writeMegabytes =
+      int.tryParse(processEnv['SMB_BENCH_WRITE_MB'] ?? '') ?? 64;
 
   late TestEnv env;
   late Smb2Client client;
@@ -139,9 +145,55 @@ void main() {
     }, timeout: Timeout(Duration(minutes: 5)));
   }
 
-  if ((benchFile == null || benchFile.isEmpty) && (benchDir == null || benchDir.isEmpty)) {
+  if (hasWriteDir) {
+    test('write benchmark', () async {
+      // What this answers: whether writing serially, one megabyte per
+      // request, is already fast enough that parallelising it would buy
+      // nothing. The read of the same file is measured straight afterwards
+      // as the yardstick -- the same bytes over the same link, through a
+      // path that is already parallel.
+      final bytes = Uint8List(writeMegabytes * 1024 * 1024);
+      for (var i = 0; i < bytes.length; i += 4096) {
+        bytes[i] = i & 0xFF; // not all zeroes, in case anything compresses
+      }
+      final path = '${env.writeDir}/bench-${env.runTag}.bin';
+      print('[bench] Writing ${writeMegabytes}MB to $path');
+
+      final writing = Stopwatch()..start();
+      final writer = await tree.createNew(path);
+      await writer.write(bytes);
+      await writer.close();
+      writing.stop();
+
+      final wroteFor = writing.elapsedMilliseconds / 1000;
+      print('[bench] write: ${writeMegabytes}MB in '
+          '${wroteFor.toStringAsFixed(3)}s '
+          '(${(bytes.length / 1024 / 1024 / wroteFor).toStringAsFixed(1)} MB/s, '
+          'serial, 1MB per request)');
+      expect(writer.written, bytes.length);
+
+      final reading = Stopwatch()..start();
+      final read = await tree.readFile(path);
+      reading.stop();
+      final readFor = reading.elapsedMilliseconds / 1000;
+      print('[bench] read back: ${writeMegabytes}MB in '
+          '${readFor.toStringAsFixed(3)}s '
+          '(${(read.length / 1024 / 1024 / readFor).toStringAsFixed(1)} MB/s, '
+          'parallel)');
+      expect(read.length, bytes.length);
+
+      print('[bench] writing is '
+          '${(wroteFor / readFor).toStringAsFixed(1)}x the time of reading. '
+          'Near 1.0 means there is nothing for parallel writes to win.');
+    }, timeout: Timeout(Duration(minutes: 10)));
+  }
+
+  if ((benchFile == null || benchFile.isEmpty) &&
+      (benchDir == null || benchDir.isEmpty) &&
+      !hasWriteDir) {
     test('no benchmark target', () {
-      print('[bench] Set SMB_BENCH_FILE or SMB_BENCH_DIR to run benchmarks');
+      print('[bench] Set SMB_BENCH_FILE, SMB_BENCH_DIR or SMB_WRITE_DIR to '
+          'run benchmarks');
     });
   }
 }
