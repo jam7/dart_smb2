@@ -59,8 +59,8 @@ void main() {
   /// this run apart from the last one, whose files cannot be deleted yet
   /// (delete arrives in a later stage, so these are left behind on purpose
   /// and the directory is expected to be one that can be swept by hand).
-  var _n = 0;
-  String aFreshName() => '${env.writeDir}/write-test-${env.runTag}-${_n++}.bin';
+  var nth = 0;
+  String aFreshName() => '${env.writeDir}/write-test-${env.runTag}-${nth++}.bin';
 
   Uint8List pattern(int length) {
     final bytes = Uint8List(length);
