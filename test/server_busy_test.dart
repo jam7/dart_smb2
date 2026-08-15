@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:test/test.dart';
+import 'package:dart_smb2/src/client.dart';
+import 'package:dart_smb2/src/protocol/commands.dart';
 import 'package:dart_smb2/src/protocol/header.dart';
 import 'package:dart_smb2/src/protocol/status.dart';
 import 'package:dart_smb2/src/transport/multiplexer.dart';
@@ -114,6 +116,41 @@ void main() {
       clock.flushMicrotasks();
       expect(outcome, isA<Smb2Response>());
     });
+  });
+
+  test('an operation hands its own argument down to the wire', () async {
+    // The rest of this file works one message at a time, which is where the
+    // routing lives. This one goes in by the front door instead: a caller
+    // asks a named operation, and the argument has to survive every layer
+    // between it and the response that triggers it.
+    final conn = FakeConnection();
+    final mux = Smb2Multiplexer(conn, requestTimeout: limit);
+    final sender = Smb2Sender(conn, mux);
+    mux.startReceiveLoop();
+    addTearDown(mux.stop);
+
+    final tree = Smb2Tree.forTesting(
+      sender: sender,
+      sessionId: 1,
+      treeId: 1,
+      maxReadSize: 65536,
+      shareName: 'share',
+    );
+
+    var told = 0;
+    conn.onSend = (header, body) {
+      if (header.command == Smb2Command.create) {
+        // Working on it, then the answer: the shape a slow open takes.
+        conn.pushResponse(
+            responseHeader(header, status: NtStatus.pending), Uint8List(8));
+      }
+      conn.pushResponse(
+          responseHeader(header, status: NtStatus.accessDenied), Uint8List(9));
+    };
+
+    await expectLater(
+        tree.listDirectory('/', onServerBusy: () => told++), throwsA(anything));
+    expect(told, 1, reason: 'the argument reached the request that was made');
   });
 
   test('asking for no callback is still allowed', () {

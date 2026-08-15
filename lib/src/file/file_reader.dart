@@ -63,13 +63,18 @@ class Smb2FileReader {
   /// exceeds the server's max read size, issuing up to [readAhead]
   /// requests in parallel to hide network round-trip latency.
   /// Returns exactly [length] bytes unless the file is shorter.
-  Future<Uint8List> readRange(int offset, int length, {int readAhead = 4}) async {
+  ///
+  /// [onServerBusy] is called whenever the server says it is still working on
+  /// one of the requests this makes -- so more than once, and from more than
+  /// one block, when the read is split.
+  Future<Uint8List> readRange(int offset, int length,
+      {int readAhead = 4, void Function()? onServerBusy}) async {
     if (offset >= _fileSize) return Uint8List(0);
     final readLen = length.clamp(0, _fileSize - offset);
     if (readLen <= 0) return Uint8List(0);
 
     if (readLen <= _maxReadSize) {
-      return _readOnce(offset, readLen);
+      return _readOnce(offset, readLen, onServerBusy: onServerBusy);
     }
 
     // Split into chunks read by a bounded pool of workers. A shared
@@ -92,7 +97,8 @@ class Smb2FileReader {
             (readLen - pos) > _maxReadSize ? _maxReadSize : (readLen - pos);
         final Uint8List chunk;
         try {
-          chunk = await _readOnce(offset + pos, chunkSize);
+          chunk = await _readOnce(offset + pos, chunkSize,
+              onServerBusy: onServerBusy);
         } catch (_) {
           failed = true; // Stop workers from picking up new chunks
           rethrow;
@@ -123,14 +129,16 @@ class Smb2FileReader {
   }
 
   /// Single SMB Read request. Length must not exceed _maxReadSize.
-  Future<Uint8List> _readOnce(int offset, int length) async {
+  Future<Uint8List> _readOnce(int offset, int length,
+      {void Function()? onServerBusy}) async {
     final req = ReadRequest(
       fileId: _fileId,
       offset: offset,
       length: length,
     );
     final header = req.buildHeader(sessionId: _sessionId, treeId: _treeId);
-    final response = await _sender.send(header, req.encode());
+    final response =
+        await _sender.send(header, req.encode(), onServerBusy: onServerBusy);
 
     // Reject error statuses before the empty-body check, so a header-only
     // error response throws instead of being returned as zero bytes.
@@ -148,15 +156,17 @@ class Smb2FileReader {
   ///
   /// Uses pipelined reads: up to [readAhead] requests are sent before
   /// waiting for responses, hiding network round-trip latency.
-  Stream<Uint8List> readStream({int blockSize = 0, int readAhead = 3}) {
+  Stream<Uint8List> readStream(
+      {int blockSize = 0, int readAhead = 3, void Function()? onServerBusy}) {
     final effectiveBlockSize = blockSize > 0
         ? (blockSize > _maxReadSize ? _maxReadSize : blockSize)
         : _maxReadSize;
 
-    return _streamRead(effectiveBlockSize, readAhead);
+    return _streamRead(effectiveBlockSize, readAhead, onServerBusy);
   }
 
-  Stream<Uint8List> _streamRead(int blockSize, int readAhead) async* {
+  Stream<Uint8List> _streamRead(
+      int blockSize, int readAhead, void Function()? onServerBusy) async* {
     // Send up to [readAhead] Read requests before waiting for the first
     // response. As each response arrives, send the next request to keep
     // the pipeline full.
@@ -165,7 +175,8 @@ class Smb2FileReader {
 
     // Fill the pipeline
     while (pending.length < readAhead && nextOffset < _fileSize) {
-      pending.add(readRange(nextOffset, blockSize));
+      pending.add(readRange(nextOffset, blockSize,
+          onServerBusy: onServerBusy));
       nextOffset += blockSize;
     }
 
@@ -177,7 +188,8 @@ class Smb2FileReader {
 
         // Send next request to keep pipeline full
         if (nextOffset < _fileSize) {
-          pending.add(readRange(nextOffset, blockSize));
+          pending.add(readRange(nextOffset, blockSize,
+              onServerBusy: onServerBusy));
           nextOffset += blockSize;
         }
       }
@@ -191,10 +203,10 @@ class Smb2FileReader {
   }
 
   /// Read the entire file into memory.
-  Future<Uint8List> readAll() async {
+  Future<Uint8List> readAll({void Function()? onServerBusy}) async {
     final chunks = <Uint8List>[];
     int totalLen = 0;
-    await for (final chunk in readStream()) {
+    await for (final chunk in readStream(onServerBusy: onServerBusy)) {
       chunks.add(chunk);
       totalLen += chunk.length;
     }

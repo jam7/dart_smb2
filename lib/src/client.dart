@@ -70,7 +70,12 @@ class Smb2Tree {
   int get treeId => _treeId;
 
   /// List directory contents.
-  Future<List<Smb2FileInfo>> listDirectory(String path) async {
+  ///
+  /// [onServerBusy] is called if the server answers one of the requests this
+  /// makes with "still working on it", which it does for a directory it
+  /// cannot enumerate straight away. It can fire more than once.
+  Future<List<Smb2FileInfo>> listDirectory(String path,
+      {void Function()? onServerBusy}) async {
     // Normalize path: remove leading/trailing slashes, use backslash
     final normalizedPath = _normalizePath(path);
 
@@ -87,7 +92,8 @@ class Smb2Tree {
       sessionId: _sessionId,
       treeId: _treeId,
     );
-    final createResp = await _sender.send(createHeader, createReq.encode());
+    final createResp = await _sender.send(createHeader, createReq.encode(),
+        onServerBusy: onServerBusy);
     createResp.checkStatus('Open directory "$normalizedPath"');
     final createResult = CreateResponse.decode(createResp.body);
     final fileId = createResult.fileId;
@@ -119,7 +125,8 @@ class Smb2Tree {
           treeId: _treeId,
         );
         final oneTrip = Stopwatch()..start();
-        final queryResp = await _sender.send(queryHeader, queryReq.encode());
+        final queryResp = await _sender.send(queryHeader, queryReq.encode(),
+            onServerBusy: onServerBusy);
         oneTrip.stop();
         roundTrips++;
 
@@ -194,20 +201,26 @@ class Smb2Tree {
   ///
   /// Ranges within one server read (<= maxReadSize) are issued as a
   /// compound Create+Read+Close: one round trip instead of three.
-  Future<Uint8List> readRange(String path, {required int offset, required int length}) async {
+  Future<Uint8List> readRange(String path,
+      {required int offset,
+      required int length,
+      void Function()? onServerBusy}) async {
     if (length <= _maxReadSize) {
-      return _readRangeCompound(path, offset, length);
+      return _readRangeCompound(path, offset, length,
+          onServerBusy: onServerBusy);
     }
     final reader = await openRead(path);
     try {
-      return await reader.readRange(offset, length);
+      return await reader.readRange(offset, length,
+          onServerBusy: onServerBusy);
     } finally {
       await reader.close();
     }
   }
 
   /// Open, read and close in a single compound round trip.
-  Future<Uint8List> _readRangeCompound(String path, int offset, int length) async {
+  Future<Uint8List> _readRangeCompound(String path, int offset, int length,
+      {void Function()? onServerBusy}) async {
     final normalizedPath = _normalizePath(path);
     final createReq = CreateRequest(
       fileName: normalizedPath,
@@ -236,7 +249,7 @@ class Smb2Tree {
         closeReq.buildHeader(sessionId: _sessionId, treeId: _treeId),
         closeReq.encode(),
       ),
-    ]);
+    ], onServerBusy: onServerBusy);
     final createFuture = futures[0];
     final readFuture = futures[1];
     final closeFuture = futures[2];
@@ -263,10 +276,11 @@ class Smb2Tree {
   }
 
   /// Read an entire file.
-  Future<Uint8List> readFile(String path) async {
+  Future<Uint8List> readFile(String path,
+      {void Function()? onServerBusy}) async {
     final reader = await openRead(path);
     try {
-      return await reader.readAll();
+      return await reader.readAll(onServerBusy: onServerBusy);
     } finally {
       await reader.close();
     }

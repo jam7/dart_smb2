@@ -74,8 +74,12 @@ class Smb2Sender {
   /// so they inherit the preceding Create's FileId; callers put
   /// [FileId.related] sentinels in those requests. Budget (in-flight
   /// slots and credits) is reserved for the whole chain atomically.
+  /// [onServerBusy] hears about any of the chained requests: they are one
+  /// operation as far as the caller is concerned, so which link of the chain
+  /// the server is still working on is not something they can act on.
   Future<List<Future<Smb2Response>>> sendCompound(
-      List<(Smb2Header, Uint8List)> requests) async {
+      List<(Smb2Header, Uint8List)> requests,
+      {void Function()? onServerBusy}) async {
     if (requests.isEmpty || requests.length > _multiplexer.maxInflight) {
       throw ArgumentError('Compound of ${requests.length} requests '
           '(maxInflight: ${_multiplexer.maxInflight})');
@@ -124,7 +128,8 @@ class Smb2Sender {
             header.flags |= Smb2Flags.relatedOperations;
           }
           header.nextCommand = (i == requests.length - 1) ? 0 : sizes[i];
-          futures.add(_multiplexer.registerRequest(header.messageId));
+          futures.add(_multiplexer.registerRequest(header.messageId,
+              onServerBusy: onServerBusy));
           header.encode(packet, offset);
           packet.setRange(offset + Smb2Header.size,
               offset + Smb2Header.size + body.length, body);
