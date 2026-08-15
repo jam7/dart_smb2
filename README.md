@@ -61,6 +61,19 @@ Network-saturated at ~113 MB/s (Gigabit LAN limit). Read-ahead=2 is sufficient f
 
 WiFi latency makes read-ahead more impactful: readAhead=1→2 yields a 1.5x jump. Parallel reads saturate around 3 connections at ~90 MB/s.
 
+### Writing (64MB, Gigabit LAN, SMB 2.1)
+
+| | speed |
+|---|---|
+| write, serial, 1MB per request | **91.7 MB/s** |
+| read the same file back, parallel | 105.3 MB/s |
+
+Writing one block at a time already reaches 87% of what reading the same file
+achieves in parallel, and reading is at the wire's practical ceiling. Sending
+write blocks concurrently was planned and then dropped: at most 13% is left to
+win, and the cost would be a hole in the file when one block of several fails
+-- on a server, where somebody else can see it.
+
 ## Usage
 
 ```dart
