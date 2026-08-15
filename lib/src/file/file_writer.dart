@@ -69,8 +69,9 @@ class Smb2FileWriter {
     while (sent < bytes.length) {
       final length = math.min(_maxWriteSize, bytes.length - sent);
       final block = Uint8List.sublistView(bytes, sent, sent + length);
+      final int taken;
       try {
-        _written += await _writeOnce(at + sent, block);
+        taken = await _writeOnce(at + sent, block);
       } catch (_) {
         // Whatever went wrong, this file now has a gap where this block
         // should be. Refusing the rest is what keeps [written] equal to the
@@ -78,7 +79,18 @@ class Smb2FileWriter {
         _broken = true;
         rethrow;
       }
-      sent += length;
+      if (taken <= 0) {
+        // A server that accepts a write and then says it took nothing would
+        // otherwise be looped over for ever, one empty round trip at a time.
+        _broken = true;
+        throw StateError('the server took none of ${block.length} bytes '
+            'at ${at + sent}');
+      }
+      // Advance by what was taken, not by what was offered: a server may
+      // take less than it was given, and the rest has to go out again from
+      // where it stopped rather than be skipped.
+      _written += taken;
+      sent += taken;
     }
   }
 

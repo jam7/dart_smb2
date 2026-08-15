@@ -9,7 +9,7 @@
 |---|---|---|
 | D-01 開く口は `createNew` | `lib/src/client.dart` の `Smb2Tree.createNew` | T-01, T-02, T-17 |
 | D-02 `WriteRequest` / `WriteResponse` | `lib/src/protocol/messages/write.dart` | T-12, T-13, T-03 |
-| D-03 `Smb2FileWriter` | `lib/src/file/file_writer.dart` の `write` / `_sendBlocks` / `_writeOnce` | T-03, T-05, T-08, T-10 |
+| D-03 `Smb2FileWriter` | `lib/src/file/file_writer.dart` の `write` / `_sendBlocks` / `_writeOnce` | T-03, T-05, T-08, T-10, T-19, T-20 |
 | D-04 1 回の要求は 1MB まで | `lib/src/client.dart` の `_negotiate` (`_oneMegabyte`) | T-16 |
 | D-05 失敗した writer は以後拒む | `lib/src/file/file_writer.dart` の `_broken` | T-11 |
 | D-06 `close` は待つ | `lib/src/file/file_writer.dart` の `close` | T-04, T-06, T-07 |
@@ -17,6 +17,15 @@
 | D-08 テストは 2 段構え | `test/write_test.dart` / `test/integration/write_test.dart` | (この表そのもの) |
 
 ### 設計から変えた点 (実装して分かったこと)
+
+- **D-03**: 送信ループが**応答の `Count` を無視して、送ったつもりの長さだけ
+  進んでいた**。SMB2 の Write 応答は要求より小さい `Count` を返しうる
+  (short write) ので、その場合に**足りない分を黙って飛ばして**いた。
+  進む量を `Count` にして、残りは次の周回で送り直すようにした。
+  `Count` が 0 のまま成功応答が来る場合は無限周回になるので、そこで打ち切る
+  - **見つけたのは変異検査**。「`written` に応答の count でなく送った長さを
+    足す」という変異が**どのテストにも捕まらなかった** — 偽サーバーが常に
+    満額で答えていたため。T-19 / T-20 を足して塞いだ
 
 - **D-01**: `Smb2Tree` が `maxWriteSize` を持っていなかったので、`Smb2Tree._` と
   `forTesting` に引数を 1 つ足した。design.md は「読み取りと同じ組み合わせで
@@ -34,7 +43,7 @@
 | S-02 渡した順にそのまま並ぶ | T-03〜T-07 (単体)、**T-14, T-15 (実サーバー)** |
 | S-03 サーバーの上限は見えない | T-08, T-09 (単体)、**T-16 (実サーバー)** |
 | S-04 失敗は分かる形で返る | T-02 (単体) |
-| S-05 どこまで渡ったかを読める | T-10, T-11 (単体)、T-14 (実サーバー) |
+| S-05 どこまで渡ったかを読める | T-10, T-11, T-19, T-20 (単体)、T-14 (実サーバー) |
 | S-06 既存の読み取りを変えない | 既存テスト 132 件、T-18 (実サーバー) |
 
 **S-02 と S-03 は単体だけでは足りない。** 偽サーバーは「受け取った」と答える

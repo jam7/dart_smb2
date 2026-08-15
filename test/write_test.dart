@@ -244,6 +244,57 @@ void main() {
     expect(writes().length, 2, reason: 'the refused write was not retried');
   });
 
+  // T-19: S-02, S-05 a server that takes less than it was offered
+  test('what a server did not take is sent again, not skipped', () async {
+    // Takes half of whatever it is given, twice, then all of it. A server
+    // may do this; the writer must not treat the missing half as written.
+    var writesSeen = 0;
+    conn.onSend = (header, body) {
+      switch (header.command) {
+        case Smb2Command.create:
+          conn.pushResponse(responseHeader(header), _createResponseBody());
+        case Smb2Command.write:
+          final asked = ByteData.sublistView(body).getUint32(4, Endian.little);
+          writesSeen++;
+          final takes = writesSeen <= 2 ? asked ~/ 2 : asked;
+          conn.pushResponse(responseHeader(header), _writeResponseBody(takes));
+        case Smb2Command.close:
+          conn.pushResponse(responseHeader(header), Uint8List(60));
+      }
+    };
+    final w = await tree.createNew('books/vol2.zip');
+
+    await w.write(bytes(100));
+
+    expect(writes(), [
+      (offset: 0, length: 100),
+      (offset: 50, length: 50),
+      (offset: 75, length: 25),
+    ], reason: 'each retry starts where the last one really stopped');
+    expect(w.written, 100, reason: 'and every byte is accounted for once');
+  });
+
+  // T-20: S-05, D-05 a server that takes nothing is not looped over
+  test('a server that takes nothing stops the writer', () async {
+    conn.onSend = (header, body) {
+      switch (header.command) {
+        case Smb2Command.create:
+          conn.pushResponse(responseHeader(header), _createResponseBody());
+        case Smb2Command.write:
+          conn.pushResponse(responseHeader(header), _writeResponseBody(0));
+        case Smb2Command.close:
+          conn.pushResponse(responseHeader(header), Uint8List(60));
+      }
+    };
+    final w = await tree.createNew('books/vol2.zip');
+
+    await expectLater(w.write(bytes(100)), throwsStateError);
+
+    expect(writes().length, 1, reason: 'it was not asked a second time');
+    expect(w.written, 0);
+    expect(() => w.write(bytes(10)), throwsStateError);
+  });
+
   // T-12: D-02 the request says where its data starts, counted from the header
   test('the data offset is measured from the start of the header', () {
     final req = WriteRequest(
