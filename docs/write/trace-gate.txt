@@ -1,0 +1,15 @@
+# Declared exceptions to the trace gate for docs/write/.
+# The contract is the same as tools/cq-baseline.txt: a line here is a
+# decision, and writing the reason is the review.
+
+# The spec exists (phase 1); its tests do not (phase 4). Each of these is an
+# acceptance condition waiting to be pinned by a T-ID, which is a hole that
+# is meant to be visible while it lasts -- and the gate reports the list back
+# as stale once the tests land, so these lines cannot quietly outlive them.
+# G4 does not pass until this file has no pending: line left.
+pending: S-01
+pending: S-02
+pending: S-03
+pending: S-04
+pending: S-05
+pending: S-06
