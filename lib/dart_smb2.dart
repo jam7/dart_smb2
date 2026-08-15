@@ -9,6 +9,7 @@ library;
 export 'src/client.dart' show Smb2Client, Smb2Tree;
 export 'src/file/smb2_file.dart' show Smb2FileInfo;
 export 'src/file/file_reader.dart' show Smb2FileReader;
+export 'src/file/file_writer.dart' show Smb2FileWriter;
 export 'src/transport/multiplexer.dart'
     show Smb2Exception, Smb2TimeoutException, Smb2SigningRequiredException;
 export 'src/protocol/status.dart' show NtStatus;

@@ -18,6 +18,15 @@ class AccessMask {
   /// Standard read access.
   static const int read = fileReadData | fileReadAttributes | readControl | synchronize;
 
+  /// Standard write access.
+  ///
+  /// Reading attributes is included because the size of a file is one, and
+  /// access is settled when the file is opened -- asking later is not an
+  /// option, so a writer that will ever need to know where the end is has to
+  /// ask now.
+  static const int write =
+      fileWriteData | fileReadAttributes | fileWriteAttributes | synchronize;
+
   /// Maximum allowed access.
   static const int maximumAllowed = 0x02000000;
 }

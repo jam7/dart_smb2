@@ -6,6 +6,7 @@ import 'package:logging/logging.dart';
 import 'auth/ntlmssp.dart';
 import 'auth/spnego.dart';
 import 'file/file_reader.dart';
+import 'file/file_writer.dart';
 import 'file/smb2_file.dart';
 import 'protocol/commands.dart';
 import 'protocol/header.dart';
@@ -31,6 +32,7 @@ class Smb2Tree {
   final int _sessionId;
   final int _treeId;
   final int _maxReadSize;
+  final int _maxWriteSize;
   final int _maxTransactSize;
   final String _shareName;
 
@@ -39,12 +41,14 @@ class Smb2Tree {
     required int sessionId,
     required int treeId,
     required int maxReadSize,
+    required int maxWriteSize,
     required int maxTransactSize,
     required String shareName,
   })  : _sender = sender,
         _sessionId = sessionId,
         _treeId = treeId,
         _maxReadSize = maxReadSize,
+        _maxWriteSize = maxWriteSize,
         _maxTransactSize = maxTransactSize,
         _shareName = shareName;
 
@@ -55,6 +59,7 @@ class Smb2Tree {
     required int sessionId,
     required int treeId,
     required int maxReadSize,
+    int maxWriteSize = 65536,
     int maxTransactSize = 65536,
     required String shareName,
   }) : this._(
@@ -62,6 +67,7 @@ class Smb2Tree {
           sessionId: sessionId,
           treeId: treeId,
           maxReadSize: maxReadSize,
+          maxWriteSize: maxWriteSize,
           maxTransactSize: maxTransactSize,
           shareName: shareName,
         );
@@ -194,6 +200,44 @@ class Smb2Tree {
       sessionId: _sessionId,
       treeId: _treeId,
       maxReadSize: _maxReadSize,
+    );
+  }
+
+  /// Create a file that is not there yet, and return a writer for it.
+  ///
+  /// Fails if anything of that name already exists, and **the server is what
+  /// decides that**: the request carries FILE_CREATE, whose meaning is "if
+  /// the file already exists, fail the operation" ([MS-SMB2] 2.2.13). Asking
+  /// first and creating afterwards would leave a gap for somebody else to
+  /// create it in; this way there is no gap.
+  ///
+  /// There is no way from here to write over a file that already exists.
+  /// That is the point of this stage, not an omission: see docs/write/.
+  Future<Smb2FileWriter> createNew(String path) async {
+    final normalizedPath = _normalizePath(path);
+    final createReq = CreateRequest(
+      fileName: normalizedPath,
+      desiredAccess: AccessMask.write,
+      // Others may read what is being written; nobody else may write it or
+      // delete it while this handle is open.
+      shareAccess: ShareAccess.read,
+      createDisposition: CreateDisposition.fileCreate,
+      createOptions: CreateOptions.nonDirectoryFile,
+    );
+    final createHeader = createReq.buildHeader(
+      sessionId: _sessionId,
+      treeId: _treeId,
+    );
+    final createResp = await _sender.send(createHeader, createReq.encode());
+    createResp.checkStatus('Create file "$normalizedPath"');
+    final createResult = CreateResponse.decode(createResp.body);
+
+    return Smb2FileWriter(
+      sender: _sender,
+      fileId: createResult.fileId,
+      sessionId: _sessionId,
+      treeId: _treeId,
+      maxWriteSize: _maxWriteSize,
     );
   }
 
@@ -333,6 +377,10 @@ class Smb2Client {
   static const defaultConnectTimeout = Duration(seconds: 15);
 
   static final _log = Logger('Smb2Client');
+
+  /// The ceiling on one request's payload, whichever direction it goes.
+  static const int _oneMegabyte = 1048576;
+
   final Smb2Multiplexer _multiplexer;
   final Smb2Sender _sender;
   final String _host;
@@ -420,9 +468,14 @@ class Smb2Client {
     _maxWriteSize = negotiateResp.maxWriteSize;
     _maxTransactSize = negotiateResp.maxTransactSize;
 
-    // Cap sizes to 1MB for practical use (bounds memory and creditCharge)
-    if (_maxReadSize > 1048576) _maxReadSize = 1048576;
-    if (_maxTransactSize > 1048576) _maxTransactSize = 1048576;
+    // Cap sizes to 1MB for practical use (bounds memory and creditCharge).
+    // A request costs one credit per 64KB it starts, so the megabyte a server
+    // here offers for writes -- eight of them -- would spend 128 credits of a
+    // window that holds 32. Reads run at the wire's speed on 1MB blocks, so
+    // there is nothing to buy by asking for more before measuring.
+    if (_maxReadSize > _oneMegabyte) _maxReadSize = _oneMegabyte;
+    if (_maxWriteSize > _oneMegabyte) _maxWriteSize = _oneMegabyte;
+    if (_maxTransactSize > _oneMegabyte) _maxTransactSize = _oneMegabyte;
 
     _log.info('Negotiated dialect: ${Smb2Dialect.describe(_dialectRevision)}, '
         'maxRead: $_maxReadSize, maxWrite: $_maxWriteSize, '
@@ -485,6 +538,7 @@ class Smb2Client {
       sessionId: _sessionId,
       treeId: treeId,
       maxReadSize: _maxReadSize,
+      maxWriteSize: _maxWriteSize,
       maxTransactSize: _maxTransactSize,
       shareName: shareName,
     );
