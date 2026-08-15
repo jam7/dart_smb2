@@ -61,18 +61,22 @@ Network-saturated at ~113 MB/s (Gigabit LAN limit). Read-ahead=2 is sufficient f
 
 WiFi latency makes read-ahead more impactful: readAhead=1→2 yields a 1.5x jump. Parallel reads saturate around 3 connections at ~90 MB/s.
 
-### Writing (64MB, Gigabit LAN, SMB 2.1)
+### Writing (64MB, **wired** Gigabit LAN, SMB 2.1)
 
 | | speed |
 |---|---|
 | write, serial, 1MB per request | **91.7 MB/s** |
 | read the same file back, parallel | 105.3 MB/s |
 
-Writing one block at a time already reaches 87% of what reading the same file
-achieves in parallel, and reading is at the wire's practical ceiling. Sending
-write blocks concurrently was planned and then dropped: at most 13% is left to
-win, and the cost would be a hole in the file when one block of several fails
--- on a server, where somebody else can see it.
+On a wire, writing one block at a time already reaches 87% of what reading the
+same file achieves in parallel, and reading is at the link's practical ceiling.
+
+**This says nothing about WiFi, which is where the client that motivated
+writing actually runs.** The read figures above measure exactly that
+difference: pipelining is worth 1.18x on the wire and 1.76x over WiFi (50 to
+88 MB/s), because what parallelism hides is round-trip latency, and a wire has
+almost none to hide. Whether write blocks should be sent concurrently is
+therefore still open, and needs the same measurement taken over WiFi.
 
 ## Usage
 
