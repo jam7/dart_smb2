@@ -51,4 +51,10 @@ class TestEnv {
       port: port,
     );
   }
+
+  /// Which directory a test that needs a big one should list.
+  ///
+  /// Kept out of the source because what is large differs per share, and the
+  /// paths on a real one are nobody's business but its owner's.
+  String get listDir => Platform.environment['SMB_LIST_DIR'] ?? '/';
 }

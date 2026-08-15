@@ -96,6 +96,14 @@ class Smb2Tree {
       // Query directory entries
       final entries = <Smb2FileInfo>[];
       bool firstQuery = true;
+      // What a listing costs, split the way the two possible fixes are split:
+      // how many round trips there were, and how long one of them took. A
+      // listing that is slow because there are many fast round trips wants
+      // partial results; one that is slow because a single round trip takes
+      // seconds wants the server's "still working" to reach the caller. The
+      // measurement is FINE, so it is off unless somebody is asking.
+      final spent = Stopwatch()..start();
+      var roundTrips = 0;
 
       while (true) {
         final queryReq = QueryDirectoryRequest(
@@ -110,14 +118,22 @@ class Smb2Tree {
           sessionId: _sessionId,
           treeId: _treeId,
         );
+        final oneTrip = Stopwatch()..start();
         final queryResp = await _sender.send(queryHeader, queryReq.encode());
+        oneTrip.stop();
+        roundTrips++;
 
         if (queryResp.header.status == NtStatus.noMoreFiles) {
+          _log.fine('queryDirectory: trip $roundTrips came back empty in '
+              '${oneTrip.elapsedMilliseconds}ms');
           break;
         }
         queryResp.checkStatus('QueryDirectory "$normalizedPath"');
 
         final dirEntries = QueryDirectoryResponse.decode(queryResp.body);
+        _log.fine('queryDirectory: trip $roundTrips brought '
+            '${dirEntries.length} entries in ${oneTrip.elapsedMilliseconds}ms '
+            '(asked for ${_maxTransactSize ~/ 1024}KB)');
         for (final entry in dirEntries) {
           // Skip . and ..
           if (entry.fileName == '.' || entry.fileName == '..') continue;
@@ -138,6 +154,8 @@ class Smb2Tree {
         firstQuery = false;
       }
 
+      _log.fine('listDirectory "$normalizedPath": ${entries.length} entries '
+          'in $roundTrips trip(s), ${spent.elapsedMilliseconds}ms');
       return entries;
     } finally {
       await _closeFile(fileId);
