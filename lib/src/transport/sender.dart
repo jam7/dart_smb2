@@ -24,7 +24,10 @@ class Smb2Sender {
   ///
   /// [header] is the SMB2 header (will be assigned a MessageId).
   /// [body] is the command-specific payload after the header.
-  Future<Smb2Response> send(Smb2Header header, Uint8List body) async {
+  /// [onServerBusy] is called if the server answers this request with an
+  /// interim STATUS_PENDING, meaning it is working rather than ignoring it.
+  Future<Smb2Response> send(Smb2Header header, Uint8List body,
+      {void Function()? onServerBusy}) async {
     // Request credits
     if (header.creditRequestResponse == 0) {
       header.creditRequestResponse = 32; // Request 32 credits
@@ -48,7 +51,8 @@ class Smb2Sender {
       try {
         final messageId = _multiplexer.allocateMessageId(creditCharge: header.creditCharge);
         header.messageId = messageId;
-        responseFuture = _multiplexer.registerRequest(messageId);
+        responseFuture =
+            _multiplexer.registerRequest(messageId, onServerBusy: onServerBusy);
 
         final packet = Uint8List(Smb2Header.size + body.length);
         header.encode(packet, 0);

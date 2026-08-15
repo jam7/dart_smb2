@@ -17,7 +17,13 @@ class _PendingRequest {
   /// the field is not final.
   Timer? expiry;
 
-  _PendingRequest(this.completer) : createdAt = DateTime.now();
+  /// Told when the server says it is still working on this one. Belongs to
+  /// the request rather than to the connection because that is the only
+  /// place that knows *which* operation the server means.
+  final void Function()? onServerBusy;
+
+  _PendingRequest(this.completer, {this.onServerBusy})
+      : createdAt = DateTime.now();
 
   void stopWaiting() {
     expiry?.cancel();
@@ -176,11 +182,16 @@ class Smb2Multiplexer {
   }
 
   /// Register a pending request and return its Future.
+  ///
+  /// [onServerBusy] is called each time the server answers this request with
+  /// an interim STATUS_PENDING, which it may do more than once.
+  ///
   /// Throws [Smb2Exception] if the receive loop has stopped.
-  Future<Smb2Response> registerRequest(int messageId) {
+  Future<Smb2Response> registerRequest(int messageId,
+      {void Function()? onServerBusy}) {
     _checkRunning();
     final completer = Completer<Smb2Response>();
-    final request = _PendingRequest(completer);
+    final request = _PendingRequest(completer, onServerBusy: onServerBusy);
     _pending[messageId] = request;
     _startWaiting(messageId, request, requestTimeout);
     return completer.future;
@@ -365,6 +376,17 @@ class Smb2Multiplexer {
       if (waiting != null && requestTimeout != null) {
         _startWaiting(
             header.messageId, waiting, requestTimeout! * _pendingExtension);
+      }
+      if (waiting?.onServerBusy != null) {
+        // Somebody else's code, on the receive loop. A caller that throws in
+        // here would otherwise take down the loop and with it every other
+        // request on this connection, none of which had anything to do with
+        // it.
+        try {
+          waiting!.onServerBusy!();
+        } catch (e, st) {
+          _log.warning('onServerBusy for MessageId=${header.messageId}', e, st);
+        }
       }
       _notifyBudgetWaiters();
       return;
