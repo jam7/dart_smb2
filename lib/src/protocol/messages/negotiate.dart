@@ -19,7 +19,23 @@ class Smb2Dialect {
   }
 }
 
-/// Security mode flags for Negotiate.
+/// Security mode flags, in a request and in the response to it.
+///
+/// This library does not sign anything and does not intend to (see the Scope
+/// section of the README), which makes [signingEnabled] look like a claim it
+/// cannot back. It is not a claim the other end may act on:
+///
+/// - `SMB2_NEGOTIATE_SIGNING_ENABLED` is defined with "The server MUST ignore
+///   this bit", in the NEGOTIATE request and the SESSION_SETUP request alike
+///   ([MS-SMB2] 2.2.3, 2.2.5);
+/// - and a client that does not *require* signing has no other value to send:
+///   "If RequireMessageSigning is FALSE, the client MUST set the
+///   SMB2_NEGOTIATE_SIGNING_ENABLED bit to TRUE in SecurityMode"
+///   ([MS-SMB2] 3.2.4.2.2.2).
+///
+/// So sending 0 instead would break a MUST to gain nothing observable. What
+/// decides whether signing happens is the *server's* [signingRequired] bit in
+/// its NEGOTIATE response, which is a different field in the other direction.
 class SecurityMode {
   static const int signingEnabled = 0x0001;
   static const int signingRequired = 0x0002;

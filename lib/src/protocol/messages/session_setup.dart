@@ -20,6 +20,8 @@ import 'negotiate.dart';
 class SessionSetupRequest {
   static const int _bufferOffset = 24; // Offset from body start
 
+  /// The same one byte as in the NEGOTIATE request, and for the same reason
+  /// the server must ignore it -- see [SecurityMode].
   final int securityMode;
   final Uint8List securityBuffer;
   final int sessionId;
