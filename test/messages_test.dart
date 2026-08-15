@@ -69,6 +69,23 @@ void main() {
       expect(resp.maxTransactSize, 65536);
     });
 
+    test('a server that only enables signing is one we can talk to', () {
+      final resp = NegotiateResponse.decode(
+          _buildNegotiateResponse(securityMode: SecurityMode.signingEnabled));
+
+      expect(resp.signingRequired, isFalse);
+    });
+
+    test('a server that requires signing is one we cannot', () {
+      // Both bits: a server that requires signing has it enabled as well,
+      // which is how a real one answers.
+      final resp = NegotiateResponse.decode(_buildNegotiateResponse(
+          securityMode:
+              SecurityMode.signingEnabled | SecurityMode.signingRequired));
+
+      expect(resp.signingRequired, isTrue);
+    });
+
     test('decode extracts empty security buffer when length=0', () {
       final body = _buildNegotiateResponse(
         dialect: Smb2Dialect.smb202,
@@ -321,6 +338,7 @@ Uint8List _buildNegotiateResponse({
   int maxWriteSize = 65536,
   int maxTransactSize = 65536,
   int securityBufferLength = 0,
+  int securityMode = SecurityMode.signingEnabled,
 }) {
   // Minimum response body size: 65 bytes
   final secBufOffset = Smb2Header.size + 64; // After header + fixed fields
@@ -328,7 +346,7 @@ Uint8List _buildNegotiateResponse({
   final bd = ByteData.sublistView(body);
 
   bd.setUint16(0, 65, Endian.little); // StructureSize
-  bd.setUint16(2, 0x0001, Endian.little); // SecurityMode
+  bd.setUint16(2, securityMode, Endian.little); // SecurityMode
   bd.setUint16(4, dialect, Endian.little); // DialectRevision
   // ServerGUID at 8..24 (zeros)
   bd.setUint32(24, 0, Endian.little); // Capabilities

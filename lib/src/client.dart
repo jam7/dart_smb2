@@ -380,6 +380,9 @@ class Smb2Client {
     response.checkStatus('Negotiate');
 
     final negotiateResp = NegotiateResponse.decode(response.body);
+    if (negotiateResp.signingRequired) {
+      throw Smb2SigningRequiredException();
+    }
     _dialectRevision = negotiateResp.dialectRevision;
     _maxReadSize = negotiateResp.maxReadSize;
     _maxWriteSize = negotiateResp.maxWriteSize;

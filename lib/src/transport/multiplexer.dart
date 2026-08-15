@@ -101,6 +101,30 @@ class Smb2TimeoutException extends Smb2Exception {
   String toString() => 'Smb2TimeoutException: $message';
 }
 
+/// The server will only talk to a client that signs every message, and this
+/// one does not.
+///
+/// Thrown at the end of the negotiate, which is the first moment it can be
+/// known and the last moment it can be said plainly: carrying on produces a
+/// refusal at the session setup, or at a read much later, with a status that
+/// says nothing about signing.
+///
+/// Not something to catch and retry. Signing is not implemented here and is
+/// not planned -- see the Scope section of the README -- so a share behind
+/// this setting needs a different client.
+///
+/// There is no status: the server has not refused anything yet.
+class Smb2SigningRequiredException extends Smb2Exception {
+  Smb2SigningRequiredException()
+      : super(
+            0,
+            'The server requires signed messages, which this library does not '
+            'implement');
+
+  @override
+  String toString() => 'Smb2SigningRequiredException: $message';
+}
+
 /// Manages MessageId-based multiplexing of SMB2 requests/responses.
 ///
 /// - Each outgoing request is assigned a unique MessageId

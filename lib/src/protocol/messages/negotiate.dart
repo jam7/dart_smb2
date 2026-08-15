@@ -94,6 +94,9 @@ class NegotiateRequest {
 
 /// Parsed SMB2 Negotiate response.
 class NegotiateResponse {
+  /// The server's own [SecurityMode], which unlike the client's is acted on:
+  /// [signingRequired] reads the one bit in it that decides whether this
+  /// connection can work at all.
   final int securityMode;
   final int dialectRevision;
   final Uint8List serverGuid;
@@ -113,6 +116,14 @@ class NegotiateResponse {
     required this.maxWriteSize,
     required this.securityBuffer,
   });
+
+  /// Whether the server insists every message be signed.
+  ///
+  /// This library signs nothing, so the answer decides whether the connection
+  /// is worth continuing: a server that requires signing will reject the
+  /// session setup, or the reads after it, and the reason will be nowhere
+  /// near the cause by then.
+  bool get signingRequired => securityMode & SecurityMode.signingRequired != 0;
 
   /// Decode from response body (after 64-byte header).
   static NegotiateResponse decode(Uint8List body) {
