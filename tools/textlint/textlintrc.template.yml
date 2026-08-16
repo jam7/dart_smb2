@@ -1,0 +1,92 @@
+# What textlint checks in this project. Read by tools/check-text.py, which
+# runs only where textlint is installed (see README, "two portability tiers").
+#
+# This file is yours: install.sh creates it when missing and never replaces
+# it. YAML rather than JSON so that a rule can carry the reason it is on.
+#
+# The rule packages named here have to exist in the environment, or textlint
+# fails loudly -- deliberately: a configured check that quietly does nothing
+# is worse than no check. Install what this file names:
+#
+#   npm install -g textlint textlint-rule-preset-ja-technical-writing
+#
+# textlint is not in this repository and neither are its rules; only these
+# declarations are. Everything below is a starting point -- delete what does
+# not fit, and write why in a comment when the reason is not obvious.
+
+rules:
+  # Japanese technical writing: sentence length, comma count, mixed styles,
+  # doubled particles. The most standard preset, and the one whose findings
+  # read as prose problems rather than taste.
+  preset-ja-technical-writing:
+    # Prose in this project quotes commands and identifiers, which the
+    # default 100-character limit counts as prose. 120 keeps the rule useful
+    # without arguing about every line that carries a path.
+    sentence-length:
+      max: 120
+      # skipPatterns SUBTRACTS the matched spans from the count (measured:
+      # a marker-only pattern shaved exactly its own length). Both patterns
+      # remove data, so what the limit measures is the prose:
+      #   悪い例/良い例 lines quote literal code and commit subjects -- the
+      #   block shape is rules/90-rule-format.md's, and their prose part
+      #   measured 10-16 characters. Matching to end-of-line drops the
+      #   payload.
+      #   Script-name enumerations (a.py, b.py, ...) are inventory, and any
+      #   sentence honest enough to list seven of them would bust the limit
+      #   on data alone.
+      skipPatterns:
+        - "/(悪い例|良い例):.*/"
+        - "/[\\w.-]+\\.py/g"
+    # Off by default: lists and tables legitimately end without a period.
+    ja-no-mixed-period: false
+    # "" means majority vote per document, which turns the rule into what
+    # it should be here: an internal-consistency check. The rule's own
+    # defaults pin list items to である, but this repository holds both a
+    # ですます tutorial README and である-terse SKILL.md instructions --
+    # measured: every one of 15 findings was the pinned default arguing
+    # with a document that was already consistent with itself.
+    no-mix-dearu-desumasu:
+      preferInHeader: ""
+      preferInBody: ""
+      preferInList: ""
+    # Questions are legitimate here -- FAQ headings ("Q. 秘密情報は大丈夫?")
+    # and quoted inner speech -- and this repository's convention is ASCII
+    # punctuation, so it is the half-width mark that needs allowing.
+    # Exclamation stays forbidden: no measured legitimate use.
+    no-exclamation-question-mark:
+      allowHalfWidthQuestion: true
+    # は, も and でも legitimately repeat within one sentence in this
+    # project's prose: contrastive pairs ("ネストは 4 段以内、引数は 5 個
+    # 以内"), enumeration ("ビルドもテストも全ゲートも通る"), and
+    # neither-nor pairs ("ハッシュでも件名でも参照しない") are deliberate
+    # parallel structures, and rewording them made every measured instance
+    # worse. Other particles stay checked.
+    no-doubled-joshi:
+      allow: ["は", "も", "でも"]
+    # Off: the rule cannot pair a paren group that wraps to a list item's
+    # continuation line ("- 規則: 待ち時間 (`sleep` /\n  `setTimeout`) で"),
+    # a construct this project's documents use everywhere. Measured
+    # 2026-08-16: every finding (4/4) was this false positive, zero were
+    # real. Isolated: the same text outside a list, or closed on one line,
+    # passes.
+    no-unmatched-pair: false
+
+  # Proper-noun tripwire (optional, needs two more packages):
+  #
+  #   npm install -g @textlint-ja/textlint-rule-morpheme-match \
+  #                  textlint-filter-rule-allowlist
+  #
+  # Reports every proper noun the morphological analyser finds, so that a
+  # name reaching the documents has to be declared in allow.yml first. Useful
+  # where the prose is about private data (an author name, a work title);
+  # noise everywhere else. The dictionary is dict.js in this directory.
+  #
+  # "@textlint-ja/morpheme-match":
+  #   dictionaryPathList: ["./dict.js"]
+
+# Declared exceptions, with their reasons, live in allow.yml. Uncomment
+# together with the tripwire above.
+#
+# filters:
+#   allowlist:
+#     allowlistConfigPaths: ["./allow.yml"]

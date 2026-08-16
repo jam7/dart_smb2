@@ -29,6 +29,7 @@ private_doc=""   # project document to point at when the private gate fires
 private_args=""  # extra check-private.py options (scopes, denylist, allow)
 refs_args=""     # extra check-refs.py options (scope, allow)
 trace_args=""    # trace-matrix arguments; empty leaves the trace gate off
+text_scope=""    # prose patterns for textlint; empty leaves the text gate off
 embedded_repos="" # gitlinks this project keeps on purpose (space separated)
 [ -f "$root/tools/gate.conf" ] && . "$root/tools/gate.conf"
 
@@ -87,6 +88,18 @@ if [ -f "$root/tools/check-metrics.py" ] && staged_has_code; then
     # a change is half-staged, but it is the code that will be there after the
     # commit, which is what the reason in the baseline has to be true of.
     python3 "$root/tools/check-metrics.py" $args || status=1
+fi
+
+# The one check that needs a runtime outside this repository. It skips with a
+# notice where textlint is not installed, so the gate is weaker on some
+# machines -- acceptable only because it checks writing quality. Nothing
+# protective belongs here; see the README on the two portability tiers.
+if [ -f "$root/tools/check-text.py" ] && [ -n "$text_scope" ]; then
+    set -f
+    args=""
+    for re in $text_scope; do args="$args --scope $re"; done
+    python3 "$root/tools/check-text.py" --staged $args || status=1
+    set +f
 fi
 
 if [ -n "$extra_checks" ] && staged_has_code; then

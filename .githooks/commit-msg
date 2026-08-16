@@ -13,6 +13,11 @@
 # separates that from a second verb phrase. Measured over this repository's
 # history, the comma form matched every real mix and nothing else.
 #
+# The message points at the diff, not the wording, on purpose. The first
+# answer an AI gave this warning was to treat it as a style remark: reword
+# the subject, push the same mixed diff through (measured 2026-08-16). A
+# subject is only the confession; the offence, if any, is in the diff.
+#
 # This file is a copy. The original, and the install.sh that placed and
 # updates it, live in https://github.com/jam7/ai-dev-gates
 subject=$(sed -n '1p' "$1")
@@ -23,9 +28,11 @@ case "$subject" in
         echo "note: this subject reads as two changes:" >&2
         echo "  $subject" >&2
         echo >&2
-        echo "If they are independent, splitting now costs one 'git reset'." >&2
-        echo "Later it costs a history rewrite. If it really is one change," >&2
-        echo "rephrase the subject and carry on -- nothing is blocked." >&2
+        echo "The question is about the staged diff, not the wording. If two" >&2
+        echo "parts of it could be reverted independently, split now: it costs" >&2
+        echo "one 'git reset' here and a history rewrite later. Rephrase the" >&2
+        echo "subject only after looking at the diff and finding one change --" >&2
+        echo "rewording without looking defeats a tripwire. Nothing is blocked." >&2
         echo >&2
         ;;
 esac

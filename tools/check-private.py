@@ -25,10 +25,15 @@ Two kinds of check:
   every invented path would fail, so a project that has not written one yet
   gets the structural checks and nothing else.
 
-An optional exact denylist is read from notes/private-patterns.txt when that
+An optional denylist is read from notes/private-patterns.txt when that
 file exists. It lists real names, so it belongs in a private notes repository
 and never in the checked one -- a list of things that must not leak is itself
-the worst thing to leak.
+the worst thing to leak. Terms match with character-class boundaries rather
+than as bare substrings: an ASCII term never touches other alphanumerics (an
+id inside a longer number is a different value), and a CJK term of one or two
+characters matches only next to a delimiter -- CJK prose has no word breaks,
+and a bare-substring rule made short names unlistable, which left them
+unprotected. Longer CJK terms are distinctive enough to match anywhere.
 
 Deliberate exceptions are declared in tools/private-allow.txt (see --allow),
 with the reason above each entry, the same shape as cq-baseline.txt. A plain
@@ -52,6 +57,11 @@ Usage:
   --vocabulary PATH   default tools/test-vocabulary.txt
   --denylist PATH     default notes/private-patterns.txt
   --allow PATH        default tools/private-allow.txt
+                      A named path that does not exist is an error (exit 2):
+                      it decides what the scan can see, and a run that
+                      silently checks nothing must not pass. An absent
+                      default is normal, and a readable empty file
+                      (--denylist /dev/null) is a deliberate "none".
   --data-scope RE     files whose data must use the vocabulary, repeatable
   --scan-scope RE     files scanned at all (defaults to the data scope plus
                       lib/ and src/), repeatable
@@ -80,7 +90,8 @@ DEFAULT_SCAN_SCOPE = DEFAULT_DATA_SCOPE + (
     r'(^|/)(lib|src)/.*' + SOURCE_EXT,
 )
 
-CJK = re.compile(r'[぀-ヿ㐀-䶿一-鿿]')
+CJK_RANGE = r'぀-ヿ㐀-䶿一-鿿'
+CJK = re.compile('[%s]' % CJK_RANGE)
 # `$e\n$st` in a logging example is one string, not a two-segment path. A real
 # path carries a dot, a slash or a drive colon; an escape sequence does not.
 ESCAPE_NOT_PATH = re.compile(r'^[^/:.]*\\[nrt0v][^/:.]*$')
@@ -142,6 +153,7 @@ class Policy:
 
     def __init__(self, root, args):
         self.root = root
+        self.scanned = 0  # files and messages actually read this run
         vocab = abspath(root, args.vocabulary)
         self.vocabulary_known = os.path.exists(vocab)
         self.tokens, self.patterns = load_vocabulary(vocab)
@@ -229,11 +241,35 @@ def load_vocabulary(path):
     return tokens, patterns
 
 
+def denylist_matcher(term):
+    """How a denylist term may match, by character class.
+
+    A bare substring fails in both directions. An alphanumeric id inside a
+    longer token is a different value, so an ASCII term must not touch
+    neighbouring alphanumerics. CJK prose has no word breaks, so a
+    two-character name would stop every sentence containing it -- which kept
+    such names off the list entirely, unprotected; a short CJK term instead
+    matches only next to a delimiter (anything that is not a CJK letter),
+    and a longer CJK title is distinctive enough to match anywhere.
+    """
+    esc = re.escape(term)
+    if term.isascii():
+        left = r'(?<![0-9A-Za-z])' if term[:1].isalnum() else ''
+        right = r'(?![0-9A-Za-z])' if term[-1:].isalnum() else ''
+        return re.compile(left + esc + right, re.I)
+    if len(term) > 2:
+        return re.compile(esc, re.I)
+    return re.compile('(?<![%s])%s|%s(?![%s])'
+                      % (CJK_RANGE, esc, esc, CJK_RANGE), re.I)
+
+
 def load_denylist(path):
+    """Denylist terms as (term, matcher) pairs."""
     if not os.path.exists(path):
         return []
     with open(path, encoding='utf-8') as f:
-        return [t for t in (strip_comment(l) for l in f) if t]
+        return [(t, denylist_matcher(t))
+                for t in (strip_comment(l) for l in f) if t]
 
 
 def load_allow(path):
@@ -303,10 +339,18 @@ def check_line(where, lineno, line, policy, historical):
     private name is never acceptable, only tolerated in history by removal."""
     problems = []
     for rx, why in STRUCTURAL:
-        m = rx.search(line)
-        if m and not policy.known(m.group(0)) \
-                and not policy.allowed(m.group(0), historical):
-            problems.append((where, lineno, why, m.group(0)))
+        # Every match on the line, not just the first: a minified JSON line
+        # carries many values, and stopping at one declared dummy id used to
+        # hide every undeclared id behind it. Identical values are reported
+        # once per line -- six copies of one leaked id are one problem.
+        seen = set()
+        for m in rx.finditer(line):
+            hit = m.group(0)
+            if hit in seen or policy.known(hit) \
+                    or policy.allowed(hit, historical):
+                continue
+            seen.add(hit)
+            problems.append((where, lineno, why, hit))
     for key, value in KEY_ASSIGN.findall(line):
         expected = policy.keyed.get(key)
         if expected is not None and value not in expected \
@@ -314,13 +358,14 @@ def check_line(where, lineno, line, policy, historical):
             problems.append((where, lineno,
                              '%s is not one of the example values' % key,
                              value))
-    for term in policy.denylist:
-        if term.lower() in line.lower():
+    for term, rx in policy.denylist:
+        if rx.search(line):
             problems.append((where, lineno, 'known private name', term))
     return problems
 
 
 def check_content(path, content, policy, historical=False):
+    policy.scanned += 1
     problems = []
     for lineno, line in enumerate(content.split('\n'), 1):
         problems += check_line(path, lineno, line, policy, historical)
@@ -365,6 +410,7 @@ def check_worktree(policy):
 def check_message(rev, policy):
     """A commit message carries data too, and is not caught by any file scan.
     Messages only exist in revisions, so the historical allowances apply."""
+    policy.scanned += 1
     problems = []
     message = git(policy.root, 'log', '-1', '--format=%B', rev)
     for lineno, line in enumerate(message.split('\n'), 1):
@@ -410,9 +456,12 @@ def parse_args():
     g.add_argument('--worktree', action='store_true')
     g.add_argument('--range')
     g.add_argument('--all-history', action='store_true')
-    ap.add_argument('--vocabulary', default=DEFAULT_VOCAB, metavar='PATH')
-    ap.add_argument('--denylist', default=DEFAULT_DENYLIST, metavar='PATH')
-    ap.add_argument('--allow', default=DEFAULT_ALLOW, metavar='PATH')
+    ap.add_argument('--vocabulary', metavar='PATH',
+                    help='default: %s' % DEFAULT_VOCAB)
+    ap.add_argument('--denylist', metavar='PATH',
+                    help='default: %s' % DEFAULT_DENYLIST)
+    ap.add_argument('--allow', metavar='PATH',
+                    help='default: %s' % DEFAULT_ALLOW)
     ap.add_argument('--data-scope', action='append', metavar='RE')
     ap.add_argument('--scan-scope', action='append', metavar='RE')
     return ap.parse_args()
@@ -438,9 +487,36 @@ def report(problems, policy, args):
           file=sys.stderr)
 
 
+def declared_path(given, default, root, option):
+    """Resolve a declaration-file option.
+
+    A path the user named must exist: these files decide what the scan can
+    see, so a run that silently checks nothing is worse than one that fails.
+    Measured: a trial clone without the private notes repository fed
+    --all-history a nonexistent denylist, got 0 findings, and the
+    verification passed on nothing (reported from na, 2026-08-16). An
+    absent default stays fine -- not asking for a check is not an error.
+    An empty file that exists also stays fine: --denylist /dev/null is how
+    a run declares "no denylist", and readable emptiness is a statement.
+    """
+    if given is None:
+        return default
+    if not os.path.exists(abspath(root, given)):
+        sys.stderr.write('error: the declaration file named by %s does not '
+                         'exist: %s\n' % (option, given))
+        sys.exit(2)
+    return given
+
+
 def main():
     args = parse_args()
-    policy = Policy(repo_root(), args)
+    root = repo_root()
+    args.vocabulary = declared_path(args.vocabulary, DEFAULT_VOCAB, root,
+                                    '--vocabulary')
+    args.denylist = declared_path(args.denylist, DEFAULT_DENYLIST, root,
+                                  '--denylist')
+    args.allow = declared_path(args.allow, DEFAULT_ALLOW, root, '--allow')
+    policy = Policy(root, args)
 
     if args.staged:
         problems = check_staged(policy)
@@ -450,6 +526,20 @@ def main():
         spec = ['--all'] if args.all_history else [args.range]
         revs = [r for r in git(policy.root, 'rev-list', *spec).split('\n') if r]
         problems = check_revisions(revs, policy)
+
+    # An absent DEFAULT denylist runs the scan without the known-names
+    # check, and that green must not read like a checked green -- the same
+    # contract check-text.py states for a missing textlint. Said once per
+    # run, on stderr, only when something was actually scanned (a run that
+    # read nothing has nothing to be quiet about), and without touching
+    # the exit code: a checkout without the private notes repository still
+    # has to be able to commit. Unlike vocabulary (deleting that file is
+    # its documented off-switch) and allow (no declared exceptions is
+    # normal), an absent denylist means nothing on purpose. Turning it off
+    # deliberately is done by naming a readable empty file instead.
+    if policy.scanned and not os.path.exists(abspath(root, args.denylist)):
+        print('no denylist at %s; known names are not being checked.'
+              % args.denylist, file=sys.stderr)
 
     if not problems:
         return 0
