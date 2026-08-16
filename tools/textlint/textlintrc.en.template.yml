@@ -1,0 +1,41 @@
+# What textlint checks in this project's ENGLISH prose. Read by
+# tools/check-text.py when gate.conf sets text_scope_en; the Japanese
+# configuration (textlintrc.yml) cannot serve here, because its sentence
+# limit counts characters and floods ordinary English (measured on a real
+# project: 27 of 31 findings came from the two English documents, none a
+# writing fault). Two configs is a mechanism, not a taste: textlint 15.8
+# has no `overrides`, so per-language rules cannot live in one file
+# (verified against @textlint/config-loader -- the word does not occur).
+#
+# This file is yours: install.sh creates it when missing and never
+# replaces it. The rule packages named here have to exist in the
+# environment, or textlint fails loudly:
+#
+#   npm install -g textlint textlint-rule-terminology \
+#                  textlint-rule-en-max-word-count
+#
+# Chosen from measurement (2026-08-16, ~17,000 chars of real English docs):
+# terminology hit 6 times, all real (WiFi for Wi-Fi), zero false positives,
+# and --fix repairs them; en-max-word-count at 50 words hit twice, both
+# genuinely long. Rejected: en-capitalization (2/2 false positives --
+# it dislikes sentences that start with an identifier or acronym, which
+# technical prose does constantly; last updated 2022).
+
+rules:
+  # Terminology drift (WiFi/Wi-Fi, Github/GitHub, Javascript/JavaScript):
+  # dictionary-based, so no false positives, and the most visible kind of
+  # flaw in a public README. textlint --fix repairs these.
+  terminology: true
+
+  # The English counterpart of the Japanese sentence-length rule: it
+  # counts words, not characters, so it does not lie about English. The
+  # default 50 measured well -- 2 findings per ~17,000 characters.
+  en-max-word-count:
+    max: 50
+
+  # Considered and left out for now: write-good (32 findings on the same
+  # corpus, all passive-voice/wordiness style opinions -- adopting it
+  # means judging each class first; last updated 2022). Revisit if the
+  # two rules above prove too thin.
+  #
+  # write-good: true

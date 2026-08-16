@@ -30,6 +30,8 @@ private_args=""  # extra check-private.py options (scopes, denylist, allow)
 refs_args=""     # extra check-refs.py options (scope, allow)
 trace_args=""    # trace-matrix arguments; empty leaves the trace gate off
 text_scope=""    # prose patterns for textlint; empty leaves the text gate off
+text_scope_en="" # English prose patterns; empty leaves the English pair off
+text_config_en="" # its config; empty means tools/textlint/textlintrc.en.yml
 embedded_repos="" # gitlinks this project keeps on purpose (space separated)
 [ -f "$root/tools/gate.conf" ] && . "$root/tools/gate.conf"
 
@@ -94,12 +96,27 @@ fi
 # notice where textlint is not installed, so the gate is weaker on some
 # machines -- acceptable only because it checks writing quality. Nothing
 # protective belongs here; see the README on the two portability tiers.
-if [ -f "$root/tools/check-text.py" ] && [ -n "$text_scope" ]; then
+#
+# Two scope/config pairs, because one configuration cannot serve two
+# languages: the Japanese sentence limit counts characters and floods
+# ordinary English, and textlint has no `overrides` to switch rules per
+# file. A file matching both scopes is checked by both.
+run_text_check() { # $1 = scope regexes, $2 = config path ("" = the default)
+    [ -z "$1" ] && return 0
     set -f
     args=""
-    for re in $text_scope; do args="$args --scope $re"; done
-    python3 "$root/tools/check-text.py" --staged $args || status=1
+    for re in $1; do args="$args --scope $re"; done
+    [ -n "$2" ] && args="--config $2 $args"
+    python3 "$root/tools/check-text.py" --staged $args
+    rc=$?
     set +f
+    return "$rc"
+}
+
+if [ -f "$root/tools/check-text.py" ]; then
+    run_text_check "$text_scope" "" || status=1
+    run_text_check "$text_scope_en" \
+        "${text_config_en:-tools/textlint/textlintrc.en.yml}" || status=1
 fi
 
 if [ -n "$extra_checks" ] && staged_has_code; then
