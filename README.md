@@ -74,9 +74,9 @@ same file achieves in parallel, and reading is at the link's practical ceiling.
 **This says nothing about Wi-Fi, which is where the client that motivated
 writing actually runs.** The read figures above measure exactly that
 difference: pipelining is worth 1.18x on the wire and 1.76x over Wi-Fi (50 to
-88 MB/s), because what parallelism hides is round-trip latency, and a wire has
-almost none to hide. Whether write blocks should be sent concurrently is
-therefore still open, and needs the same measurement taken over Wi-Fi.
+88 MB/s). What parallelism hides is round-trip latency, and a wire has almost
+none to hide. Whether write blocks should be sent concurrently is therefore
+still open, and needs the same measurement taken over Wi-Fi.
 
 ## Usage
 
@@ -174,9 +174,9 @@ request it belongs to. The per-call argument carries that for free.
 **Returning a directory as it arrives.** `listDirectory` makes one round trip
 per bufferful and returns nothing until the last one lands, so a directory
 large enough to need several would be silent for its whole duration. Measured
-rather than assumed, that size is far off: one round trip asks for
+rather than assumed, that size is far off. One round trip asks for
 `maxTransactSize`, which negotiates to 1MB against a NAS here and holds
-several thousand entries, and a listing of 492 took two round trips and 26ms
+several thousand entries; a listing of 492 took two round trips and 26ms
 — one for the entries, one to be told there are no more. Nothing has been
 built for this, and nothing should be until a share has a directory that
 shows the fault.
