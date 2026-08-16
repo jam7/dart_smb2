@@ -37,6 +37,13 @@ rules:
       skipPatterns:
         - "/(悪い例|良い例):.*/"
         - "/[\\w.-]+\\.py/g"
+      # Pitfall: a struck-through table stops being a table. Markdown only
+      # parses a table when the separator row (|---|---|) is intact, and
+      # striking whole rows destroys it (~~|---|---|~~ is not a separator),
+      # so the rows concatenate into one "sentence" -- measured: three rows
+      # read as 142 characters, with or without ~~. To strike a table and
+      # keep it a table, strike inside each cell and leave the separator
+      # row alone; that form measured zero findings.
     # Off by default: lists and tables legitimately end without a period.
     ja-no-mixed-period: false
     # "" means majority vote per document, which turns the rule into what
@@ -60,9 +67,13 @@ rules:
     # 以内"), enumeration ("ビルドもテストも全ゲートも通る"), and
     # neither-nor pairs ("ハッシュでも件名でも参照しない") are deliberate
     # parallel structures, and rewording them made every measured instance
-    # worse. Other particles stay checked.
+    # worse. か, ても and とも belong to the same family and were measured
+    # the same way in a downstream project: every instance was a paired
+    # construction saying "whether X or Y" (成功しても失敗しても,
+    # 設定どおりなのか事故なのか), and splitting the pair is what a reader
+    # loses. Other particles stay checked.
     no-doubled-joshi:
-      allow: ["は", "も", "でも"]
+      allow: ["は", "も", "でも", "か", "ても", "とも"]
     # Off: the rule cannot pair a paren group that wraps to a list item's
     # continuation line ("- 規則: 待ち時間 (`sleep` /\n  `setTimeout`) で"),
     # a construct this project's documents use everywhere. Measured

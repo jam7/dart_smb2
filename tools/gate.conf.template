@@ -52,6 +52,35 @@ refs_args=""
 #   trace_args="--code lib --code test docs/"
 trace_args=""
 
+# What textlint reads, as space-separated regexes matched against staged
+# paths. Empty leaves the text gate off. This is the one check that needs a
+# runtime outside the repository (Node and textlint): where textlint is not
+# installed it prints a notice and passes, so the gate is WEAKER ON SOME
+# MACHINES. That is acceptable for writing quality and not for anything
+# protective -- private data and dead references stay in the checks above,
+# which are standard-library Python and cannot be skipped.
+#
+# Needs tools/textlint/textlintrc.yml; with it missing the commit fails,
+# deliberately (a configured check that quietly does nothing is worse).
+#
+#   text_scope="\.md$"
+text_scope=""
+
+# The same, for ENGLISH prose. A second pair exists because one textlint
+# configuration cannot serve two languages: the Japanese sentence limit
+# counts characters and floods ordinary English (measured: 27 of 31
+# findings on one project came from its two English documents, none a
+# writing fault), and textlint has no `overrides` to switch rules per
+# file. Point text_scope at the Japanese documents and text_scope_en at
+# the English ones; a file matching both is checked by both. The English
+# configuration defaults to tools/textlint/textlintrc.en.yml (created
+# from its .template.yml, same contract as the Japanese one).
+#
+#   text_scope="^(?!README\.md$).*\.md$"
+#   text_scope_en="^README\.md$"
+text_scope_en=""
+text_config_en=""
+
 # Embedded repositories this project tracks as gitlinks on purpose
 # (submodule-style commit pointers), space separated. Any other staged
 # gitlink -- the `git add -A` accident with a nested private repo --
