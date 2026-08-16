@@ -67,13 +67,17 @@ rules:
     # 以内"), enumeration ("ビルドもテストも全ゲートも通る"), and
     # neither-nor pairs ("ハッシュでも件名でも参照しない") are deliberate
     # parallel structures, and rewording them made every measured instance
-    # worse. Other particles stay checked.
-    # ても joins the same way: 「成功しても失敗しても読める」 states a pair of
-    # cases exhaustively, and there is no rewording that keeps the pair.
-    # Measured 2026-08-16: both instances in the two repositories this
-    # configuration was copied to were of that shape, none were sloppy.
+    # worse. か, ても and とも belong to the same family and were measured
+    # the same way in a downstream project: every instance was a paired
+    # construction saying "whether X or Y" (成功しても失敗しても,
+    # 設定どおりなのか事故なのか), and splitting the pair is what a reader
+    # loses. Other particles stay checked.
+    # ても was measured here too (2026-08-16): both instances in the two
+    # repositories this configuration was copied to were that shape. か and
+    # とも have no instance here yet -- they are taken on the upstream
+    # measurement, and the gate reads 0 either way today.
     no-doubled-joshi:
-      allow: ["は", "も", "でも", "ても"]
+      allow: ["は", "も", "でも", "か", "ても", "とも"]
     # Off: the rule cannot pair a paren group that wraps to a list item's
     # continuation line ("- 規則: 待ち時間 (`sleep` /\n  `setTimeout`) で"),
     # a construct this project's documents use everywhere. Measured
