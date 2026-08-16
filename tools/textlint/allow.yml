@@ -1,0 +1,19 @@
+# Words textlint must not report, each with the reason it is allowed --
+# the same contract as cq-baseline.txt: writing the line is the review.
+#
+# This file is yours: install.sh creates it when missing and never replaces
+# it. Read through allowlistConfigPaths in textlintrc.yml.
+#
+# Entries are plain strings, or /regexp/ between slashes. What belongs here:
+# names the morphological analyser calls proper nouns but that carry no
+# private information -- product names, technical terms, and the words an
+# ageing dictionary happens to mis-tag.
+#
+# Note the asymmetry with the private-data gate: this file declares what is
+# SAFE, so it lives in the public repository. The list of real names that
+# must never appear is the opposite kind of list, and belongs in a private
+# notes repository (check-private.py --denylist), never here.
+
+# Example (delete these):
+# - プロファイル      # IPAdic tags this ordinary word as a proper noun
+# - /^v[0-9]+\.[0-9]+/  # version numbers
