@@ -37,6 +37,13 @@ rules:
       skipPatterns:
         - "/(悪い例|良い例):.*/"
         - "/[\\w.-]+\\.py/g"
+      # Pitfall: a struck-through table stops being a table. Markdown only
+      # parses a table when the separator row (|---|---|) is intact, and
+      # striking whole rows destroys it (~~|---|---|~~ is not a separator),
+      # so the rows concatenate into one "sentence" -- measured: three rows
+      # read as 142 characters, with or without ~~. To strike a table and
+      # keep it a table, strike inside each cell and leave the separator
+      # row alone; that form measured zero findings.
     # Off by default: lists and tables legitimately end without a period.
     ja-no-mixed-period: false
     # "" means majority vote per document, which turns the rule into what
